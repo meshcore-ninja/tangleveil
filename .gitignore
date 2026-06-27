@@ -1,0 +1,16 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Local configuration (see *.example.toml)
+/config.toml
+/sources.toml
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store

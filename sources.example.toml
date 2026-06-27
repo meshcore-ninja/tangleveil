@@ -1,0 +1,8 @@
+[[sources]]
+id = "prague"
+url = "wss://corescope-prague.example/ws"
+
+[[sources]]
+id = "plzen"
+url = "wss://corescope-plzen.example/ws"
+headers = { Authorization = "Bearer replace-me" }
