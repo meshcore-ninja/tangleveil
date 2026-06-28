@@ -1,4 +1,36 @@
 services:
+  # Route selected upstream sources through Gluetun's HTTP CONNECT proxy:
+  #
+  #   [[sources]]
+  #   id = "vpn-source"
+  #   url = "wss://restricted.example.com/ws"
+  #   proxy = "http://gluetun:8888"
+  #
+  # gluetun:
+  #   image: qmcgaw/gluetun:latest
+  #   container_name: tangleveil-vpn-proxy
+  #   restart: unless-stopped
+  #
+  #   cap_add:
+  #     - NET_ADMIN
+  #
+  #   devices:
+  #     - /dev/net/tun:/dev/net/tun
+  #
+  #   environment:
+  #     VPN_SERVICE_PROVIDER: protonvpn
+  #     VPN_TYPE: wireguard
+  #     WIREGUARD_PRIVATE_KEY: ${PROTON_WIREGUARD_PRIVATE_KEY:?missing}
+  #
+  #     SERVER_COUNTRIES: Netherlands
+  #
+  #     # Enable Gluetun's HTTP CONNECT proxy.
+  #     HTTPPROXY: "on"
+  #     HTTPPROXY_LISTENING_ADDRESS: ":8888"
+  #
+  #   expose:
+  #     - "8888"
+
   tangleveil:
     build:
       context: .
@@ -6,8 +38,10 @@ services:
     image: tangleveil:local
     container_name: tangleveil
     restart: unless-stopped
+
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+
     volumes:
       - ./config.toml:/app/config.toml:ro
       - ./sources.toml:/app/sources.toml:ro
@@ -17,3 +51,7 @@ services:
       # - ./static:/app/static:ro
     environment:
       RUST_LOG: tangleveil=info
+
+    # Uncomment when using the Gluetun service above:
+    # depends_on:
+    #   - gluetun

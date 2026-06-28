@@ -180,12 +180,25 @@ async fn connect_source(
 
     runtime.set_state(ConnectionState::Handshaking);
 
-    let result = connect_async(request).await.with_context(|| {
-        format!(
-            "WebSocket handshake failed for source {}",
-            source.id
-        )
-    });
+    let result = if let Some(proxy) = source.proxy.as_deref() {
+        crate::proxy::connect_via_proxy(request, proxy)
+            .await
+            .with_context(|| {
+                format!(
+                    "WebSocket handshake failed for source {} via proxy",
+                    source.id
+                )
+            })
+    } else {
+        connect_async(request)
+            .await
+            .with_context(|| {
+                format!(
+                    "WebSocket handshake failed for source {}",
+                    source.id
+                )
+            })
+    };
 
     match result {
         Ok((stream, _response)) => {

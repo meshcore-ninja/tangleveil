@@ -75,7 +75,7 @@ pub struct LoadedConfig {
     pub static_path: PathBuf,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Deserialize, PartialEq, Eq)]
 pub struct SourceConfig {
     pub id: String,
     pub url: String,
@@ -83,6 +83,23 @@ pub struct SourceConfig {
     pub headers: BTreeMap<String, String>,
     #[serde(default)]
     pub disabled: bool,
+    #[serde(default)]
+    pub proxy: Option<String>,
+}
+
+impl std::fmt::Debug for SourceConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SourceConfig")
+            .field("id", &self.id)
+            .field("url", &self.url)
+            .field("headers", &self.headers)
+            .field("disabled", &self.disabled)
+            .field(
+                "proxy",
+                &self.proxy.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 pub async fn load_config(path: &str) -> Result<LoadedConfig> {
@@ -184,8 +201,26 @@ pub fn validate_config(config: &Config) -> Result<()> {
         if !ids.insert(&source.id) {
             bail!("duplicate source id: {}", source.id);
         }
+        if let Some(proxy) = &source.proxy {
+            if proxy.trim().is_empty() {
+                bail!("source {}: proxy cannot be empty", source.id);
+            }
+            validate_proxy_url(proxy)?;
+        }
     }
 
+    Ok(())
+}
+
+fn validate_proxy_url(proxy: &str) -> Result<()> {
+    let parsed = url::Url::parse(proxy)
+        .with_context(|| format!("invalid proxy URL {proxy}"))?;
+    if parsed.scheme() != "http" {
+        bail!("proxy URL must use http:// scheme");
+    }
+    if parsed.host_str().is_none() {
+        bail!("proxy URL missing hostname");
+    }
     Ok(())
 }
 

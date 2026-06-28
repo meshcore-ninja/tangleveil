@@ -6,6 +6,8 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
+url = "2"
 axum = { version = "0.8.9", features = ["ws"] }
 bytes = "1"
 futures-util = "0.3"

@@ -6,6 +6,7 @@ pub mod frame;
 pub mod handlers;
 pub mod metrics;
 pub mod multiplex;
+mod proxy;
 pub mod reload;
 pub mod sources;
 pub mod state;

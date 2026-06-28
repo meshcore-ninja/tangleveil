@@ -175,7 +175,9 @@ fn spawn_upstream_task(
 }
 
 fn source_needs_reconnect(previous: &SourceConfig, next: &SourceConfig) -> bool {
-    previous.url != next.url || previous.headers != next.headers
+    previous.url != next.url
+        || previous.headers != next.headers
+        || previous.proxy != next.proxy
 }
 
 pub async fn reload_from_disk(state: &AppState, supervisor: &mut SourceSupervisor) -> Result<()> {

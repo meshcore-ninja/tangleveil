@@ -12,3 +12,11 @@ url = "wss://corescope-prague.example/ws"
 id = "plzen"
 url = "wss://corescope-plzen.example/ws"
 headers = { Authorization = "Bearer replace-me" }
+
+# Route a source through an HTTP forward proxy (for example Gluetun).
+# The proxy URL is used only for outbound upstream connections and is not
+# exposed by GET /sources.
+# [[sources]]
+# id = "vpn-source"
+# url = "wss://restricted.example.com/ws"
+# proxy = "http://gluetun:8888"
