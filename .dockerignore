@@ -1,0 +1,13 @@
+/target
+/.git
+.gitignore
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+# User-specific local config; mounted as volumes instead, see docker-compose.yml.
+/config.toml
+/sources.toml

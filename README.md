@@ -21,6 +21,23 @@ cp sources.example.toml sources.toml
 RUST_LOG=tangleveil=info cargo run --release -- config.toml
 ```
 
+## Run with Docker
+
+```bash
+cp config.example.toml config.toml
+cp sources.example.toml sources.toml
+# Edit config.toml and sources.toml.
+# Inside the container, bind to 0.0.0.0 so the mapped port is reachable:
+sed -i '' 's/^listen = .*/listen = "0.0.0.0:8080"/' config.toml   # macOS/BSD sed
+
+docker compose up --build
+```
+
+`docker-compose.yml` builds the image from source by default and bind-mounts
+`config.toml`/`sources.toml` from the host so secrets never end up in the image.
+To edit the status page without rebuilding, uncomment the `static/` volume in
+`docker-compose.yml` and reload it with `POST /admin/reload` or `SIGHUP`.
+
 Upstream sources live in `sources_file` (default: `sources.toml`):
 
 ```toml
@@ -32,10 +49,13 @@ url = "wss://corescope-prague.example/ws"
 Endpoints:
 
 ```text
-GET /health
-GET /sources
-WS  /ws
-WS  /ws/{source}
+GET  /health
+GET  /sources
+GET  /metrics         (Prometheus exposition format)
+POST /admin/reload    (requires admin token)
+WS   /ws
+WS   /ws/{source}
+WS   /ws/telemetry
 ```
 
 Example source-specific connection:
@@ -44,6 +64,38 @@ Example source-specific connection:
 const ws = new WebSocket("ws://localhost:8080/ws/prague");
 ws.onmessage = (event) => console.log(event.data);
 ```
+
+## Configuration reload
+
+Tangleveil can reload `config.toml` and the sources file from disk without restarting the process. On reload it:
+
+- adds, removes, or updates upstream sources
+- reconnects sources whose URL or headers changed
+- applies reconnect backoff settings from config
+- refreshes the admin token
+
+Changes to `listen` are ignored until you restart the process.
+
+### HTTP
+
+Set a strong `admin_token` in `config.toml`. Admin endpoints require a Bearer token. Leave `admin_token` empty or at the default placeholder (`change-me`) to disable the admin API.
+
+```bash
+curl -X POST http://127.0.0.1:8080/admin/reload \
+  -H "Authorization: Bearer your-secret-token"
+```
+
+A successful reload returns `{"status":"reloaded"}`. Invalid or missing tokens return `401 Unauthorized`; a disabled admin API returns `503 Service Unavailable`.
+
+### SIGHUP (Unix)
+
+On Unix systems, sending `SIGHUP` to the process also triggers a reload:
+
+```bash
+kill -HUP <pid>
+```
+
+This does not require the admin token.
 
 ## Multiplexed envelope
 
@@ -108,5 +160,4 @@ The source-specific endpoint forwards the upstream text/binary value through a b
 - an in-memory replay ring
 - append-only persistent segments or NATS JetStream
 - shared dedupe/filter pipelines
-- Prometheus metrics
 - authentication and per-source authorization

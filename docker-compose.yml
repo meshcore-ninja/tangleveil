@@ -1,0 +1,19 @@
+services:
+  tangleveil:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tangleveil:local
+    container_name: tangleveil
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./sources.toml:/app/sources.toml:ro
+      # Uncomment to edit the status page without rebuilding the image.
+      # Pick up changes with `docker compose exec tangleveil kill -HUP 1`
+      # or POST /admin/reload.
+      # - ./static:/app/static:ro
+    environment:
+      RUST_LOG: tangleveil=info

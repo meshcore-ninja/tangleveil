@@ -1,3 +1,22 @@
 listen = "127.0.0.1:8080"
 channel_capacity = 4096
 sources_file = "sources.toml"
+
+# Path to the status page HTML, resolved relative to this config file.
+# Reloaded from disk on /admin/reload and SIGHUP, no rebuild required.
+static_file = "static/index.html"
+
+# Reconnect backoff for upstream analyzers.
+reconnect_initial_delay_secs = 1
+reconnect_max_delay_secs = 30
+# After an analyzer has been offline continuously for this long, use the longer delay below.
+reconnect_offline_threshold_secs = 60
+reconnect_offline_delay_secs = 300
+
+# Bearer token required for /admin/* endpoints. Leave empty or keep the default
+# placeholder to disable the admin API.
+admin_token = "change-me"
+
+# Extra telemetry timing logs and debug-level output when true.
+# Can also be enabled with --verbose / -v.
+verbose = false

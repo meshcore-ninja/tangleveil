@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tangleveil</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0b0f17;
+      --panel: #141b29;
+      --panel-2: #0f1521;
+      --text: #e7ecf3;
+      --muted: #8b98a8;
+      --accent: #5b9cff;
+      --ok: #3ddc84;
+      --warn: #ffb020;
+      --bad: #ff6b6b;
+      --border: #232f44;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f4f7fb;
+        --panel: #ffffff;
+        --panel-2: #eef2f8;
+        --text: #1a2332;
+        --muted: #5c6b7a;
+        --border: #d8e0ea;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 4rem;
+    }
+    header.hero {
+      margin-bottom: 2rem;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+    .eyebrow .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--bad);
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--bad) 50%, transparent);
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+    .eyebrow .dot.live {
+      background: var(--ok);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 45%, transparent); }
+      70% { box-shadow: 0 0 0 6px transparent; }
+      100% { box-shadow: 0 0 0 0 transparent; }
+    }
+    h1 {
+      margin: 0 0 0.6rem;
+      font-size: 2.4rem;
+      letter-spacing: -0.03em;
+      font-weight: 700;
+    }
+    .intro {
+      color: var(--muted);
+      max-width: 62ch;
+      font-size: 1.05rem;
+      margin: 0;
+    }
+    .usage-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 1.1rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+      padding: 0.45rem 0.9rem;
+      border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .usage-link:hover {
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+      border-color: var(--accent);
+    }
+    section { margin-top: 2.75rem; }
+    section#usage { scroll-margin-top: 1.5rem; }
+    h2 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 0 0 1rem;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0.9rem;
+    }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1rem 1.1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 96px;
+    }
+    .stat .label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+    .stat .value-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .stat .value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+    .stat .value.ok { color: var(--ok); }
+    .stat .value.bad { color: var(--bad); }
+    .spark {
+      display: block;
+      width: 100%;
+      height: 30px;
+      overflow: visible;
+    }
+    .spark rect {
+      fill: var(--accent);
+    }
+    .stat .spark {
+      flex-shrink: 0;
+      width: 80px;
+    }
+    .stat .spark rect { fill: color-mix(in srgb, var(--accent) 70%, var(--text) 0%); }
+    .activity-cell { width: 110px; }
+    .activity-cell .spark { height: 22px; }
+    .activity-cell .spark rect { fill: color-mix(in srgb, var(--muted) 60%, var(--accent) 40%); }
+    .activity-cell .spark.live rect { fill: var(--ok); }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    th, td {
+      padding: 0.55rem 0.9rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+      font-size: 0.85rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    th {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      background: var(--panel-2);
+      font-weight: 600;
+    }
+    .sources-table th:nth-child(1),
+    .sources-table td:nth-child(1) { width: 22%; }
+    .sources-table th:nth-child(2),
+    .sources-table td:nth-child(2) { width: 18%; }
+    .sources-table th:nth-child(3),
+    .sources-table td:nth-child(3) { width: 16%; }
+    .sources-table th:nth-child(4),
+    .sources-table td:nth-child(4),
+    .sources-table th:nth-child(5),
+    .sources-table td:nth-child(5) { width: 12%; }
+    .sources-table th:nth-child(6),
+    .sources-table td:nth-child(6) { width: 110px; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+    .empty-row td {
+      color: var(--muted);
+      text-align: center;
+      padding: 2rem 1rem;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.88rem;
+    }
+    .source-id { font-weight: 600; }
+    .state {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.25rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: color-mix(in srgb, var(--muted) 18%, transparent);
+    }
+    .state::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .state.connected { color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); }
+    .state.connecting, .state.handshaking { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+    .state.reconnect_wait, .state.reconnect_wait_degraded { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+    .state.disconnected, .state.disabled, .state.stopping { color: var(--bad); background: color-mix(in srgb, var(--bad) 16%, transparent); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .usage-intro {
+      color: var(--muted);
+      max-width: 68ch;
+      margin: -0.4rem 0 1.1rem;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.88em;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      padding: 0.1rem 0.4rem;
+      border-radius: 5px;
+    }
+    .endpoints .panel { padding: 0; }
+    .endpoint-row {
+      display: flex;
+      gap: 1rem;
+      padding: 1rem 1.2rem;
+      border-bottom: 1px solid var(--border);
+      align-items: flex-start;
+    }
+    .endpoint-row:last-child { border-bottom: none; }
+    .endpoint-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 230px;
+      flex-shrink: 0;
+    }
+    .verb {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 0.18rem 0.5rem;
+      border-radius: 5px;
+      flex-shrink: 0;
+    }
+    .verb.get { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+    .verb.ws { color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); }
+    .verb.post { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+    .endpoint-path {
+      font-weight: 600;
+    }
+    .endpoint-body p {
+      margin: 0 0 0.5rem;
+      color: var(--muted);
+    }
+    .endpoint-body p:last-child { margin-bottom: 0; }
+    .endpoint-body pre {
+      margin: 0.5rem 0 0;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem 0.8rem;
+      overflow-x: auto;
+    }
+    .endpoint-body pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: var(--text);
+    }
+    @media (max-width: 640px) {
+      .endpoint-row { flex-direction: column; }
+      .endpoint-meta { min-width: 0; }
+    }
+    footer {
+      margin-top: 3.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <div class="eyebrow"><span id="status-dot" class="dot"></span><span id="status-text">telemetry disconnected</span></div>
+      <h1>Tangleveil</h1>
+      <p class="intro">
+        A global proxy for CoreScope instances. Tangleveil maintains live upstream
+        connections to mesh analyzers around the world, multiplexes their packet
+        streams, and exposes a single WebSocket surface for clients that need
+        unified CoreScope telemetry.
+      </p>
+      <a class="usage-link" href="#usage">How to use this service &darr;</a>
+    </header>
+
+    <section>
+      <div class="stats">
+        <div class="stat">
+          <div class="label">Analyzers online</div>
+          <div class="value" id="stat-analyzers">—</div>
+        </div>
+        <div class="stat">
+          <div class="label">Packets / sec</div>
+          <div class="value-row">
+            <div class="value" id="stat-pps">—</div>
+            <div class="spark" id="spark-pps"></div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="label">Throughput (kbit/s)</div>
+          <div class="value-row">
+            <div class="value" id="stat-kbps">—</div>
+            <div class="spark" id="spark-kbps"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Analyzers</h2>
+      <div class="panel">
+        <table class="sources-table">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Status</th>
+              <th class="num">Connected</th>
+              <th class="num">PPS</th>
+              <th class="num">KB/s</th>
+              <th>Activity</th>
+            </tr>
+          </thead>
+          <tbody id="sources-body">
+            <tr class="empty-row"><td colspan="6">Waiting for telemetry…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="endpoints" id="usage">
+      <h2>Using this service</h2>
+      <p class="usage-intro">
+        Connect a WebSocket client to one of the endpoints below to receive CoreScope
+        packet streams, or poll the JSON endpoints for status. Replace
+        <code>ws://host</code> with <code>wss://host</code> when this page is served
+        over HTTPS.
+      </p>
+      <div class="panel">
+        <div class="endpoint-row">
+          <div class="endpoint-meta">
+            <span class="verb ws">WS</span>
+            <span class="endpoint-path mono">/ws</span>
+          </div>
+          <div class="endpoint-body">
+            <p>Multiplexed stream of every connected analyzer's packets, tagged by source.</p>
+            <p>Filter to specific sources with a repeated <code>source</code> query param or a comma-separated <code>sources</code> list.</p>
+            <pre><code>wscat -c "ws://host/ws?sources=analyzer-1,analyzer-2"</code></pre>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <div class="endpoint-meta">
+            <span class="verb ws">WS</span>
+            <span class="endpoint-path mono">/ws/&lt;source&gt;</span>
+          </div>
+          <div class="endpoint-body">
+            <p>Raw, untagged packet stream for a single analyzer, identified by its source id from the table above.</p>
+            <pre><code>wscat -c "ws://host/ws/analyzer-1"</code></pre>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <div class="endpoint-meta">
+            <span class="verb ws">WS</span>
+            <span class="endpoint-path mono">/ws/telemetry</span>
+          </div>
+          <div class="endpoint-body">
+            <p>Live JSON snapshots of analyzer status, packet/byte rates, and uptime — the feed driving this page.</p>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <div class="endpoint-meta">
+            <span class="verb get">GET</span>
+            <span class="endpoint-path mono">/sources</span>
+          </div>
+          <div class="endpoint-body">
+            <p>JSON list of configured analyzers and their current connection state.</p>
+            <pre><code>curl http://host/sources</code></pre>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <div class="endpoint-meta">
+            <span class="verb get">GET</span>
+            <span class="endpoint-path mono">/health</span>
+          </div>
+          <div class="endpoint-body">
+            <p>Liveness check; returns <code>ok</code>.</p>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <div class="endpoint-meta">
+            <span class="verb post">POST</span>
+            <span class="endpoint-path mono">/admin/reload</span>
+          </div>
+          <div class="endpoint-body">
+            <p>Reloads configuration and sources from disk without restarting the process.</p>
+            <p>Requires an admin token: <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+            <pre><code>curl -X POST -H "Authorization: Bearer &lt;token&gt;" http://host/admin/reload</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      Tangleveil &middot; CoreScope telemetry proxy
+    </footer>
+  </main>
+
+  <script>
+    const statusDot = document.getElementById("status-dot");
+    const statusText = document.getElementById("status-text");
+    const statAnalyzers = document.getElementById("stat-analyzers");
+    const statPps = document.getElementById("stat-pps");
+    const statKbps = document.getElementById("stat-kbps");
+    const sourcesBody = document.getElementById("sources-body");
+    const sparkPps = document.getElementById("spark-pps");
+    const sparkKbps = document.getElementById("spark-kbps");
+
+    const HISTORY_LEN = 30;
+    const ppsHistory = [];
+    const kbpsHistory = [];
+    const sourceHistory = new Map();
+
+    function pushHistory(arr, value) {
+      arr.push(value);
+      if (arr.length > HISTORY_LEN) arr.shift();
+    }
+
+    function sparkline(values, liveClass) {
+      const width = 100;
+      const height = 26;
+      const padded = values.length < HISTORY_LEN
+        ? new Array(HISTORY_LEN - values.length).fill(0).concat(values)
+        : values;
+      const max = Math.max(...padded, 1);
+      const barW = width / padded.length;
+      const bars = padded.map((v, i) => {
+        const h = v > 0 ? Math.max(2, (v / max) * height) : 1;
+        const x = i * barW;
+        const y = height - h;
+        return `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${(barW * 0.65).toFixed(2)}" height="${h.toFixed(2)}" rx="1"></rect>`;
+      }).join("");
+      return `<svg class="spark${liveClass ? " live" : ""}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${bars}</svg>`;
+    }
+
+    function formatDuration(secs) {
+      if (secs == null) return "—";
+      if (secs < 60) return `${secs}s`;
+      if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      return `${h}h ${m}m`;
+    }
+
+    function stateClass(state) {
+      return `state ${state}`;
+    }
+
+    const STATE_LABELS = {
+      reconnect_wait: "retrying",
+      reconnect_wait_degraded: "degraded",
+    };
+
+    function stateLabel(state) {
+      return STATE_LABELS[state] || state;
+    }
+
+    function render(data) {
+      const connected = data.sources.filter((s) => s.state === "connected").length;
+      statAnalyzers.textContent = `${connected}/${data.sources.length}`;
+      statAnalyzers.className = `value ${connected === data.sources.length && data.sources.length > 0 ? "ok" : connected === 0 && data.sources.length > 0 ? "bad" : ""}`;
+      statPps.textContent = data.pps.toFixed(1);
+      statKbps.textContent = data.kbps.toFixed(1);
+
+      pushHistory(ppsHistory, data.pps);
+      pushHistory(kbpsHistory, data.kbps);
+      sparkPps.innerHTML = sparkline(ppsHistory, true);
+      sparkKbps.innerHTML = sparkline(kbpsHistory, true);
+
+      if (data.sources.length === 0) {
+        sourcesBody.innerHTML = `<tr class="empty-row"><td colspan="6">No sources configured.</td></tr>`;
+        return;
+      }
+
+      const seenIds = new Set(data.sources.map((s) => s.id));
+      for (const id of sourceHistory.keys()) {
+        if (!seenIds.has(id)) sourceHistory.delete(id);
+      }
+
+      sourcesBody.innerHTML = data.sources.map((source) => {
+        const history = sourceHistory.get(source.id) || [];
+        pushHistory(history, source.packets);
+        sourceHistory.set(source.id, history);
+        const isLive = source.state === "connected";
+
+        return `
+        <tr>
+          <td class="mono source-id">${escapeHtml(source.id)}</td>
+          <td><span class="${stateClass(source.state)}">${escapeHtml(stateLabel(source.state))}</span></td>
+          <td class="num">${formatDuration(source.connected_secs)}</td>
+          <td class="num">${source.packets.toFixed(1)}</td>
+          <td class="num">${(source.bytes / 1000).toFixed(1)}</td>
+          <td class="activity-cell">${sparkline(history, isLive)}</td>
+        </tr>
+      `;
+      }).join("");
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function connect() {
+      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${protocol}//${location.host}/ws/telemetry`);
+
+      ws.onopen = () => {
+        statusText.textContent = "telemetry connected";
+        statusDot.classList.add("live");
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          render(JSON.parse(event.data));
+        } catch (err) {
+          console.error("invalid telemetry payload", err);
+        }
+      };
+
+      ws.onclose = () => {
+        statusText.textContent = "telemetry disconnected";
+        statusDot.classList.remove("live");
+        setTimeout(connect, 2000);
+      };
+
+      ws.onerror = () => ws.close();
+    }
+
+    connect();
+  </script>
+</body>
+</html>

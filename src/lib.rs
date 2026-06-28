@@ -1,8 +1,14 @@
+pub mod admin;
+pub mod cli;
 pub mod config;
+pub mod connection_state;
 pub mod frame;
 pub mod handlers;
 pub mod metrics;
 pub mod multiplex;
+pub mod reload;
+pub mod sources;
 pub mod state;
 pub mod status;
+pub mod telemetry;
 pub mod upstream;

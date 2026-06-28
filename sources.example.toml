@@ -1,3 +1,9 @@
+# Optional: set disabled = true to keep the source listed but not connect.
+# [[sources]]
+# id = "offline-analyzer"
+# url = "wss://example.com/ws"
+# disabled = true
+
 [[sources]]
 id = "prague"
 url = "wss://corescope-prague.example/ws"

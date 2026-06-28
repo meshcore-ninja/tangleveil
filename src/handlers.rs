@@ -1,12 +1,9 @@
-use std::{
-    collections::HashSet,
-    sync::atomic::Ordering,
-};
+use std::collections::HashSet;
 
 use axum::{
     Json, Router,
     extract::{Path, Query, State, WebSocketUpgrade, ws::{CloseFrame, Message, Utf8Bytes, WebSocket}},
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
 };
@@ -16,7 +13,14 @@ use serde::Serialize;
 use tokio::sync::broadcast;
 use tracing::warn;
 
-use crate::{frame::RawFrame, multiplex::source_id_from_multiplex_frame, state::AppState};
+use crate::{
+    admin,
+    connection_state::ConnectionState,
+    frame::RawFrame,
+    multiplex::source_id_from_multiplex_frame,
+    state::AppState,
+    telemetry,
+};
 
 #[derive(Debug, Deserialize)]
 struct MultiplexQuery {
@@ -48,16 +52,20 @@ impl MultiplexQuery {
 #[derive(Debug, Serialize)]
 struct SourceStatus {
     id: String,
-    connected: bool,
-    subscribers: usize,
+    url: String,
+    state: ConnectionState,
 }
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(telemetry::index_page))
         .route("/health", get(health))
+        .route("/metrics", get(prometheus_metrics))
         .route("/sources", get(list_sources))
+        .route("/ws/telemetry", get(telemetry::telemetry_ws))
         .route("/ws", get(multiplex_ws))
         .route("/ws/{source}", get(source_ws))
+        .nest("/admin", admin::router())
         .with_state(state)
 }
 
@@ -65,14 +73,26 @@ async fn health() -> &'static str {
     "ok"
 }
 
+async fn prometheus_metrics(State(state): State<AppState>) -> impl IntoResponse {
+    // Process metrics (CPU, memory, fds, threads) are sampled only on scrape,
+    // not on a one-second polling loop.
+    state.metrics.process.collect();
+
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        state.metrics.prometheus.render(),
+    )
+}
+
 async fn list_sources(State(state): State<AppState>) -> Json<Vec<SourceStatus>> {
-    let mut sources = state
-        .sources
+    let sources_guard = state.sources.read().expect("sources lock poisoned");
+    let mut sources = sources_guard
         .iter()
         .map(|(id, runtime)| SourceStatus {
             id: id.clone(),
-            connected: runtime.connected.load(Ordering::Relaxed),
-            subscribers: runtime.raw_tx.receiver_count(),
+            url: runtime.url(),
+            state: runtime.state(),
         })
         .collect::<Vec<_>>();
     sources.sort_by(|a, b| a.id.cmp(&b.id));
@@ -88,9 +108,10 @@ async fn multiplex_ws(
     let source_filter = if requested.is_empty() {
         None
     } else {
+        let sources = state.sources.read().expect("sources lock poisoned");
         let mut unknown = Vec::new();
         for id in &requested {
-            if !state.sources.contains_key(id) {
+            if !sources.contains_key(id) {
                 unknown.push(id.as_str());
             }
         }
@@ -114,7 +135,11 @@ async fn source_ws(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
 ) -> Response {
-    let Some(runtime) = state.sources.get(&source).cloned() else {
+    let runtime = {
+        let sources = state.sources.read().expect("sources lock poisoned");
+        sources.get(&source).cloned()
+    };
+    let Some(runtime) = runtime else {
         return (StatusCode::NOT_FOUND, "unknown source").into_response();
     };
 

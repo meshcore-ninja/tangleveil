@@ -3,7 +3,7 @@ use std::{
         Arc,
         atomic::Ordering,
     },
-    time::Duration,
+    time::Instant,
 };
 
 use anyhow::{Context, Result};
@@ -19,112 +19,233 @@ use tokio_tungstenite::{
         http::{HeaderName, HeaderValue},
     },
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::{
-    config::SourceConfig,
+    config::ReconnectPolicy,
+    connection_state::ConnectionState,
     frame::RawFrame,
     metrics::ThroughputMetrics,
     multiplex::{encode_multiplex_frame, unix_time_ms},
     state::SourceRuntime,
 };
 
-const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(30);
-
 pub async fn run_source_forever(
-    source: SourceConfig,
     runtime: Arc<SourceRuntime>,
     multiplex_tx: broadcast::Sender<Bytes>,
     throughput: Arc<ThroughputMetrics>,
+    reconnect: Arc<std::sync::RwLock<ReconnectPolicy>>,
+    cancel: CancellationToken,
 ) {
-    let mut reconnect_delay = Duration::from_secs(1);
+    let mut reconnect_delay = reconnect
+        .read()
+        .expect("reconnect policy lock poisoned")
+        .initial_delay;
+    let mut offline_since: Option<Instant> = None;
 
     loop {
-        match connect_source(&source).await {
-            Ok(stream) => {
-                runtime.connected.store(true, Ordering::Release);
-                reconnect_delay = Duration::from_secs(1);
+        if cancel.is_cancelled() {
+            return;
+        }
+
+        let source = runtime.config_snapshot();
+        if source.disabled {
+            runtime.set_disabled();
+            wait_for_cancel_or_config(&cancel).await;
+            continue;
+        }
+
+        match connect_source(&source, &runtime, &cancel).await {
+            Some(Ok(stream)) => {
+                reconnect_delay = reconnect
+                    .read()
+                    .expect("reconnect policy lock poisoned")
+                    .initial_delay;
                 info!(source = %source.id, "connected to upstream");
 
                 if let Err(error) =
-                    forward_source(&source, &runtime, &multiplex_tx, &throughput, stream).await
+                    forward_source(&source, &runtime, &multiplex_tx, &throughput, stream, &cancel)
+                        .await
                 {
                     warn!(source = %source.id, %error, "upstream disconnected");
+                    runtime.record_error();
+                }
+
+                runtime.mark_disconnected();
+                runtime.set_state(ConnectionState::Disconnected);
+                offline_since = Some(Instant::now());
+            }
+            Some(Err(error)) => {
+                warn!(source = %source.id, %error, "could not connect to upstream");
+                runtime.record_error();
+                if offline_since.is_none() {
+                    offline_since = Some(Instant::now());
                 }
             }
-            Err(error) => {
-                warn!(source = %source.id, %error, "could not connect to upstream");
-            }
+            None => return,
         }
 
-        runtime.connected.store(false, Ordering::Release);
-        sleep(reconnect_delay).await;
-        reconnect_delay = (reconnect_delay * 2).min(MAX_RECONNECT_DELAY);
+        if cancel.is_cancelled() {
+            return;
+        }
+
+        let policy = reconnect
+            .read()
+            .expect("reconnect policy lock poisoned")
+            .clone();
+        let degraded = offline_since
+            .is_some_and(|since| since.elapsed() >= policy.offline_threshold);
+
+        runtime.set_state(if degraded {
+            ConnectionState::ReconnectWaitDegraded
+        } else {
+            ConnectionState::ReconnectWait
+        });
+        runtime.record_reconnect();
+
+        let wait = if degraded {
+            policy.offline_delay
+        } else {
+            reconnect_delay
+        };
+
+        if sleep_or_cancel(wait, &cancel).await {
+            return;
+        }
+
+        if wait == reconnect_delay {
+            let max_delay = reconnect
+                .read()
+                .expect("reconnect policy lock poisoned")
+                .max_delay;
+            reconnect_delay = (reconnect_delay * 2).min(max_delay);
+        }
+    }
+}
+
+async fn wait_for_cancel_or_config(cancel: &CancellationToken) {
+    if cancel.is_cancelled() {
+        return;
+    }
+    sleep_or_cancel(std::time::Duration::from_secs(1), cancel).await;
+}
+
+async fn sleep_or_cancel(duration: std::time::Duration, cancel: &CancellationToken) -> bool {
+    tokio::select! {
+        () = cancel.cancelled() => true,
+        () = sleep(duration) => false,
     }
 }
 
 async fn connect_source(
-    source: &SourceConfig,
-) -> Result<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>> {
-    let mut request = source
-        .url
-        .as_str()
-        .into_client_request()
-        .with_context(|| format!("invalid WebSocket URL for source {}", source.id))?;
+    source: &crate::config::SourceConfig,
+    runtime: &SourceRuntime,
+    cancel: &CancellationToken,
+) -> Option<Result<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>> {
+    if cancel.is_cancelled() {
+        return None;
+    }
+
+    runtime.set_state(ConnectionState::Connecting);
+
+    let mut request = match source.url.as_str().into_client_request() {
+        Ok(request) => request,
+        Err(error) => {
+            runtime.mark_disconnected();
+            runtime.set_state(ConnectionState::Disconnected);
+            return Some(Err(error.into()));
+        }
+    };
 
     for (name, value) in &source.headers {
-        let name = HeaderName::from_bytes(name.as_bytes())
-            .with_context(|| format!("invalid header name {name:?} for source {}", source.id))?;
-        let value = HeaderValue::from_str(value)
-            .with_context(|| format!("invalid header value for source {}", source.id))?;
+        let name = match HeaderName::from_bytes(name.as_bytes()) {
+            Ok(name) => name,
+            Err(error) => {
+                runtime.mark_disconnected();
+                runtime.set_state(ConnectionState::Disconnected);
+                return Some(Err(error.into()));
+            }
+        };
+        let value = match HeaderValue::from_str(value) {
+            Ok(value) => value,
+            Err(error) => {
+                runtime.mark_disconnected();
+                runtime.set_state(ConnectionState::Disconnected);
+                return Some(Err(error.into()));
+            }
+        };
         request.headers_mut().insert(name, value);
     }
 
-    let (stream, _response) = connect_async(request)
-        .await
-        .with_context(|| format!("WebSocket handshake failed for source {}", source.id))?;
-    Ok(stream)
+    runtime.set_state(ConnectionState::Handshaking);
+
+    let result = connect_async(request).await.with_context(|| {
+        format!(
+            "WebSocket handshake failed for source {}",
+            source.id
+        )
+    });
+
+    match result {
+        Ok((stream, _response)) => {
+            runtime.set_state(ConnectionState::Connected);
+            runtime.mark_connected();
+            Some(Ok(stream))
+        }
+        Err(error) => {
+            runtime.mark_disconnected();
+            runtime.set_state(ConnectionState::Disconnected);
+            Some(Err(error))
+        }
+    }
 }
 
 async fn forward_source<S>(
-    source: &SourceConfig,
+    source: &crate::config::SourceConfig,
     runtime: &SourceRuntime,
     multiplex_tx: &broadcast::Sender<Bytes>,
     throughput: &ThroughputMetrics,
     stream: tokio_tungstenite::WebSocketStream<S>,
+    cancel: &CancellationToken,
 ) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     let (mut writer, mut reader) = stream.split();
 
-    while let Some(message) = reader.next().await {
-        match message? {
-            UpstreamMessage::Text(text) => {
-                let frame = RawFrame::Text(Utf8Bytes::from(text.as_str()));
-                publish_frame(source, runtime, multiplex_tx, throughput, frame);
+    loop {
+        tokio::select! {
+            () = cancel.cancelled() => return Ok(()),
+            message = reader.next() => {
+                match message {
+                    Some(Ok(UpstreamMessage::Text(text))) => {
+                        let frame = RawFrame::Text(Utf8Bytes::from(text.as_str()));
+                        publish_frame(source, runtime, multiplex_tx, throughput, frame);
+                    }
+                    Some(Ok(UpstreamMessage::Binary(binary))) => {
+                        let frame = RawFrame::Binary(binary);
+                        publish_frame(source, runtime, multiplex_tx, throughput, frame);
+                    }
+                    Some(Ok(UpstreamMessage::Ping(payload))) => {
+                        writer.send(UpstreamMessage::Pong(payload)).await?;
+                    }
+                    Some(Ok(UpstreamMessage::Pong(_))) => {}
+                    Some(Ok(UpstreamMessage::Close(frame))) => {
+                        info!(source = %source.id, ?frame, "upstream closed WebSocket");
+                        return Ok(());
+                    }
+                    Some(Ok(UpstreamMessage::Frame(_))) => {}
+                    Some(Err(error)) => return Err(error.into()),
+                    None => return Ok(()),
+                }
             }
-            UpstreamMessage::Binary(binary) => {
-                let frame = RawFrame::Binary(binary);
-                publish_frame(source, runtime, multiplex_tx, throughput, frame);
-            }
-            UpstreamMessage::Ping(payload) => {
-                writer.send(UpstreamMessage::Pong(payload)).await?;
-            }
-            UpstreamMessage::Pong(_) => {}
-            UpstreamMessage::Close(frame) => {
-                info!(source = %source.id, ?frame, "upstream closed WebSocket");
-                return Ok(());
-            }
-            UpstreamMessage::Frame(_) => {}
         }
     }
-
-    Ok(())
 }
 
 fn publish_frame(
-    source: &SourceConfig,
+    source: &crate::config::SourceConfig,
     runtime: &SourceRuntime,
     multiplex_tx: &broadcast::Sender<Bytes>,
     throughput: &ThroughputMetrics,
@@ -132,14 +253,13 @@ fn publish_frame(
 ) {
     let payload_bytes = frame.payload().len() as u64;
     throughput.record_packet(payload_bytes);
+    runtime.record_packet(payload_bytes);
 
     let sequence = runtime.sequence.fetch_add(1, Ordering::Relaxed);
     let received_at_ms = unix_time_ms();
 
-    // Exact source stream. A send error only means there are currently no subscribers.
     let _ = runtime.raw_tx.send(frame.clone());
 
-    // Combined stream. The envelope is encoded once and shared by all downstream clients.
     let multiplexed = encode_multiplex_frame(
         &source.id,
         sequence,

@@ -1,12 +1,22 @@
 use std::{
     collections::{BTreeMap, HashSet},
-    path::Path as FsPath,
+    path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 pub const DEFAULT_CHANNEL_CAPACITY: usize = 4096;
+const DEFAULT_RECONNECT_INITIAL_DELAY_SECS: u64 = 1;
+const DEFAULT_RECONNECT_MAX_DELAY_SECS: u64 = 30;
+const DEFAULT_RECONNECT_OFFLINE_THRESHOLD_SECS: u64 = 60;
+const DEFAULT_RECONNECT_OFFLINE_DELAY_SECS: u64 = 300;
+const DISABLED_ADMIN_TOKEN: &str = "change-me";
+
+pub fn admin_enabled(token: &str) -> bool {
+    !token.is_empty() && token != DISABLED_ADMIN_TOKEN
+}
 
 #[derive(Debug, Deserialize)]
 struct ConfigFile {
@@ -16,6 +26,20 @@ struct ConfigFile {
     channel_capacity: usize,
     #[serde(default = "default_sources_file")]
     sources_file: String,
+    #[serde(default = "default_static_file")]
+    static_file: String,
+    #[serde(default = "default_reconnect_initial_delay_secs")]
+    reconnect_initial_delay_secs: u64,
+    #[serde(default = "default_reconnect_max_delay_secs")]
+    reconnect_max_delay_secs: u64,
+    #[serde(default = "default_reconnect_offline_threshold_secs")]
+    reconnect_offline_threshold_secs: u64,
+    #[serde(default = "default_reconnect_offline_delay_secs")]
+    reconnect_offline_delay_secs: u64,
+    #[serde(default)]
+    verbose: bool,
+    #[serde(default)]
+    admin_token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -23,23 +47,43 @@ struct SourcesFile {
     sources: Vec<SourceConfig>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ReconnectPolicy {
+    pub initial_delay: Duration,
+    pub max_delay: Duration,
+    pub offline_threshold: Duration,
+    pub offline_delay: Duration,
+}
+
 #[derive(Debug)]
 pub struct Config {
     pub listen: String,
     pub channel_capacity: usize,
     pub sources: Vec<SourceConfig>,
+    pub reconnect: ReconnectPolicy,
+    pub verbose: bool,
+    pub admin_token: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug)]
+pub struct LoadedConfig {
+    pub config: Config,
+    pub sources_path: PathBuf,
+    pub static_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct SourceConfig {
     pub id: String,
     pub url: String,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub disabled: bool,
 }
 
-pub async fn load_config(path: &str) -> Result<Config> {
-    let config_path = FsPath::new(path);
+pub async fn load_config(path: &str) -> Result<LoadedConfig> {
+    let config_path = Path::new(path);
     let data = tokio::fs::read(path)
         .await
         .with_context(|| format!("could not read configuration file {path}"))?;
@@ -51,18 +95,38 @@ pub async fn load_config(path: &str) -> Result<Config> {
     let base_dir = config_path
         .parent()
         .filter(|dir| !dir.as_os_str().is_empty())
-        .unwrap_or_else(|| FsPath::new("."));
+        .unwrap_or_else(|| Path::new("."));
     let sources_path = base_dir.join(&file.sources_file);
     let sources = load_sources_file(&sources_path).await?;
+    let static_path = base_dir.join(&file.static_file);
 
-    Ok(Config {
-        listen: file.listen,
-        channel_capacity: file.channel_capacity,
-        sources,
+    Ok(LoadedConfig {
+        config: Config {
+            listen: file.listen,
+            channel_capacity: file.channel_capacity,
+            sources,
+            reconnect: ReconnectPolicy {
+                initial_delay: Duration::from_secs(file.reconnect_initial_delay_secs),
+                max_delay: Duration::from_secs(file.reconnect_max_delay_secs),
+                offline_threshold: Duration::from_secs(file.reconnect_offline_threshold_secs),
+                offline_delay: Duration::from_secs(file.reconnect_offline_delay_secs),
+            },
+            verbose: file.verbose,
+            admin_token: file.admin_token,
+        },
+        sources_path,
+        static_path,
     })
 }
 
-async fn load_sources_file(path: &FsPath) -> Result<Vec<SourceConfig>> {
+pub async fn load_static_html(path: &Path) -> Result<String> {
+    let data = tokio::fs::read_to_string(path)
+        .await
+        .with_context(|| format!("could not read static html file {}", path.display()))?;
+    Ok(data)
+}
+
+async fn load_sources_file(path: &Path) -> Result<Vec<SourceConfig>> {
     let data = tokio::fs::read(path)
         .await
         .with_context(|| format!("could not read sources file {}", path.display()))?;
@@ -80,6 +144,20 @@ pub fn validate_config(config: &Config) -> Result<()> {
     }
     if config.channel_capacity == 0 {
         bail!("channel_capacity must be greater than zero");
+    }
+
+    let reconnect = &config.reconnect;
+    if reconnect.initial_delay.is_zero() {
+        bail!("reconnect_initial_delay_secs must be greater than zero");
+    }
+    if reconnect.max_delay < reconnect.initial_delay {
+        bail!("reconnect_max_delay_secs must be >= reconnect_initial_delay_secs");
+    }
+    if reconnect.offline_threshold.is_zero() {
+        bail!("reconnect_offline_threshold_secs must be greater than zero");
+    }
+    if reconnect.offline_delay.is_zero() {
+        bail!("reconnect_offline_delay_secs must be greater than zero");
     }
 
     let mut ids = HashSet::new();
@@ -106,6 +184,26 @@ fn default_sources_file() -> String {
     "sources.toml".to_owned()
 }
 
+fn default_static_file() -> String {
+    "static/index.html".to_owned()
+}
+
 const fn default_channel_capacity() -> usize {
     DEFAULT_CHANNEL_CAPACITY
+}
+
+const fn default_reconnect_initial_delay_secs() -> u64 {
+    DEFAULT_RECONNECT_INITIAL_DELAY_SECS
+}
+
+const fn default_reconnect_max_delay_secs() -> u64 {
+    DEFAULT_RECONNECT_MAX_DELAY_SECS
+}
+
+const fn default_reconnect_offline_threshold_secs() -> u64 {
+    DEFAULT_RECONNECT_OFFLINE_THRESHOLD_SECS
+}
+
+const fn default_reconnect_offline_delay_secs() -> u64 {
+    DEFAULT_RECONNECT_OFFLINE_DELAY_SECS
 }
