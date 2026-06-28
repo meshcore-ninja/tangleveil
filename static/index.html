@@ -197,17 +197,19 @@
       font-weight: 600;
     }
     .sources-table th:nth-child(1),
-    .sources-table td:nth-child(1) { width: 22%; }
+    .sources-table td:nth-child(1) { width: 20%; }
     .sources-table th:nth-child(2),
-    .sources-table td:nth-child(2) { width: 18%; }
+    .sources-table td:nth-child(2) { width: 16%; }
     .sources-table th:nth-child(3),
-    .sources-table td:nth-child(3) { width: 16%; }
+    .sources-table td:nth-child(3),
     .sources-table th:nth-child(4),
-    .sources-table td:nth-child(4),
+    .sources-table td:nth-child(4) { width: 14%; }
     .sources-table th:nth-child(5),
-    .sources-table td:nth-child(5) { width: 12%; }
+    .sources-table td:nth-child(5),
     .sources-table th:nth-child(6),
-    .sources-table td:nth-child(6) { width: 110px; }
+    .sources-table td:nth-child(6) { width: 10%; }
+    .sources-table th:nth-child(7),
+    .sources-table td:nth-child(7) { width: 110px; }
     tbody tr:last-child td { border-bottom: none; }
     tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
     .empty-row td {
@@ -242,6 +244,8 @@
     .state.reconnect_wait, .state.reconnect_wait_degraded { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
     .state.disconnected, .state.disabled, .state.stopping { color: var(--bad); background: color-mix(in srgb, var(--bad) 16%, transparent); }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .num.warn { color: var(--warn); }
+    .num.bad { color: var(--bad); }
     .usage-intro {
       color: var(--muted);
       max-width: 68ch;
@@ -399,13 +403,14 @@
               <th>Source</th>
               <th>Status</th>
               <th class="num">Connected</th>
+              <th class="num">Last packet</th>
               <th class="num">PPS</th>
               <th class="num">KB/s</th>
               <th>Activity</th>
             </tr>
           </thead>
           <tbody id="sources-body">
-            <tr class="empty-row"><td colspan="6">Waiting for telemetry…</td></tr>
+            <tr class="empty-row"><td colspan="7">Waiting for telemetry…</td></tr>
           </tbody>
         </table>
       </div>
@@ -564,6 +569,19 @@
       return `${h}h ${m}m`;
     }
 
+    function formatRelative(secs) {
+      if (secs == null) return "—";
+      if (secs < 5) return "just now";
+      return `${formatDuration(secs)} ago`;
+    }
+
+    function relativeClass(secs) {
+      if (secs == null) return "num";
+      if (secs >= 300) return "num bad";
+      if (secs >= 60) return "num warn";
+      return "num";
+    }
+
     function stateClass(state) {
       return `state ${state}`;
     }
@@ -601,7 +619,7 @@
       sparkMemory.innerHTML = sparkline(memoryHistory, true);
 
       if (data.sources.length === 0) {
-        sourcesBody.innerHTML = `<tr class="empty-row"><td colspan="6">No sources configured.</td></tr>`;
+        sourcesBody.innerHTML = `<tr class="empty-row"><td colspan="7">No sources configured.</td></tr>`;
         return;
       }
 
@@ -621,6 +639,7 @@
           <td class="mono source-id">${escapeHtml(source.id)}</td>
           <td><span class="${stateClass(source.state)}">${escapeHtml(stateLabel(source.state))}</span></td>
           <td class="num">${formatDuration(source.connected_secs)}</td>
+          <td class="${relativeClass(source.last_packet_secs_ago)}">${formatRelative(source.last_packet_secs_ago)}</td>
           <td class="num">${source.packets.toFixed(1)}</td>
           <td class="num">${(source.bytes / 1000).toFixed(1)}</td>
           <td class="activity-cell">${sparkline(history, isLive)}</td>

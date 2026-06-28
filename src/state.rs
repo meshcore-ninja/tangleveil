@@ -5,7 +5,6 @@ use std::{
         Arc, RwLock,
         atomic::{AtomicU64, AtomicU8, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use bytes::Bytes;
@@ -56,6 +55,7 @@ pub struct SourceRuntime {
     packets: AtomicU64,
     bytes: AtomicU64,
     connected_since_ms: AtomicU64,
+    last_packet_ms: AtomicU64,
     metrics: SourceMetrics,
 }
 
@@ -71,6 +71,7 @@ impl SourceRuntime {
             packets: AtomicU64::new(0),
             bytes: AtomicU64::new(0),
             connected_since_ms: AtomicU64::new(0),
+            last_packet_ms: AtomicU64::new(0),
             metrics,
         }
     }
@@ -111,11 +112,9 @@ impl SourceRuntime {
         self.metrics.packets.increment(1);
         self.metrics.bytes.increment(payload_bytes);
 
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs_f64();
-        self.metrics.last_packet_timestamp.set(timestamp);
+        let now_ms = unix_time_ms();
+        self.last_packet_ms.store(now_ms, Ordering::Release);
+        self.metrics.last_packet_timestamp.set(now_ms as f64 / 1000.0);
     }
 
     pub fn total_packets(&self) -> u64 {
@@ -151,6 +150,14 @@ impl SourceRuntime {
             return None;
         }
         Some((unix_time_ms().saturating_sub(since)) / 1000)
+    }
+
+    pub fn last_packet_secs_ago(&self) -> Option<u64> {
+        let last_ms = self.last_packet_ms.load(Ordering::Acquire);
+        if last_ms == 0 {
+            return None;
+        }
+        Some((unix_time_ms().saturating_sub(last_ms)) / 1000)
     }
 }
 

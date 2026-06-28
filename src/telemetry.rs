@@ -33,6 +33,7 @@ pub struct SourceTelemetry {
     pub packets: f64,
     pub bytes: f64,
     pub connected_secs: Option<u64>,
+    pub last_packet_secs_ago: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -240,5 +241,6 @@ fn source_telemetry(
         packets: packet_delta as f64 / elapsed_secs,
         bytes: byte_delta as f64 / elapsed_secs,
         connected_secs: runtime.connected_secs(),
+        last_packet_secs_ago: runtime.last_packet_secs_ago(),
     }
 }
