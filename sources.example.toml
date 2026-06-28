@@ -7,6 +7,8 @@
 [[sources]]
 id = "prague"
 url = "wss://corescope-prague.example/ws"
+# Optional external identifier for this source (for example "prague:0").
+# mapping = "prague:0"
 
 [[sources]]
 id = "plzen"

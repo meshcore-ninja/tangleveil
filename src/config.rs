@@ -85,6 +85,8 @@ pub struct SourceConfig {
     pub disabled: bool,
     #[serde(default)]
     pub proxy: Option<String>,
+    #[serde(default)]
+    pub mapping: Option<String>,
 }
 
 impl std::fmt::Debug for SourceConfig {
@@ -98,6 +100,7 @@ impl std::fmt::Debug for SourceConfig {
                 "proxy",
                 &self.proxy.as_ref().map(|_| "<redacted>"),
             )
+            .field("mapping", &self.mapping)
             .finish()
     }
 }

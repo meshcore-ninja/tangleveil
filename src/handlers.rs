@@ -68,6 +68,8 @@ impl MultiplexQuery {
 struct SourceStatus {
     id: String,
     url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mapping: Option<String>,
     state: ConnectionState,
 }
 
@@ -107,6 +109,7 @@ async fn list_sources(State(state): State<AppState>) -> Json<Vec<SourceStatus>> 
         .map(|(id, runtime)| SourceStatus {
             id: id.clone(),
             url: runtime.url(),
+            mapping: runtime.mapping(),
             state: runtime.state(),
         })
         .collect::<Vec<_>>();

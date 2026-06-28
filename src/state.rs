@@ -83,6 +83,10 @@ impl SourceRuntime {
         self.config.read().expect("source config lock poisoned").url.clone()
     }
 
+    pub fn mapping(&self) -> Option<String> {
+        self.config.read().expect("source config lock poisoned").mapping.clone()
+    }
+
     pub fn config_snapshot(&self) -> SourceConfig {
         self.config.read().expect("source config lock poisoned").clone()
     }
