@@ -457,9 +457,7 @@
       <h2>Using this service</h2>
       <p class="usage-intro">
         Connect a WebSocket client to one of the endpoints below to receive CoreScope
-        packet streams, or poll the JSON endpoints for status. Replace
-        <code>ws://{{HOSTNAME}}</code> with <code>wss://{{HOSTNAME}}</code> when this
-        page is served over HTTPS.
+        packet streams, or poll the JSON endpoints for status.
       </p>
       <div class="panel">
         <div class="endpoint-row">
@@ -470,7 +468,10 @@
           <div class="endpoint-body">
             <p>Multiplexed stream of every connected analyzer's packets, tagged by source. Sends JSON by default; add <code>?binary=1</code> for the compact binary envelope.</p>
             <p>Filter to specific sources with a repeated <code>source</code> query param or a comma-separated <code>sources</code> list.</p>
-            <pre><code>wscat -c "ws://{{HOSTNAME}}/ws?sources=analyzer-1,analyzer-2"</code></pre>
+
+            <pre><code>websocat "wss://{{HOSTNAME}}/ws"</code></pre>
+            <p>Or: </p>
+            <pre><code>websocat "wss://{{HOSTNAME}}/ws?sources=analyzer-1,analyzer-2"</code></pre>
           </div>
         </div>
         <div class="endpoint-row">
@@ -480,7 +481,7 @@
           </div>
           <div class="endpoint-body">
             <p>Raw, untagged packet stream for a single analyzer, identified by its source id from the table above.</p>
-            <pre><code>wscat -c "ws://{{HOSTNAME}}/ws/analyzer-1"</code></pre>
+            <pre><code>websocat "wss://{{HOSTNAME}}/ws/analyzer-1"</code></pre>
           </div>
         </div>
         <div class="endpoint-row">
@@ -499,7 +500,7 @@
           </div>
           <div class="endpoint-body">
             <p>JSON list of configured analyzers and their current connection state.</p>
-            <pre><code>curl http://{{HOSTNAME}}/sources</code></pre>
+            <pre><code>curl https://{{HOSTNAME}}/sources</code></pre>
           </div>
         </div>
         <div class="endpoint-row">
@@ -519,7 +520,7 @@
           <div class="endpoint-body">
             <p>Reloads configuration and sources from disk without restarting the process.</p>
             <p>Requires an admin token: <code>Authorization: Bearer &lt;token&gt;</code>.</p>
-            <pre><code>curl -X POST -H "Authorization: Bearer &lt;token&gt;" http://{{HOSTNAME}}/admin/reload</code></pre>
+            <pre><code>curl -X POST -H "Authorization: Bearer &lt;token&gt;" https://{{HOSTNAME}}/admin/reload</code></pre>
           </div>
         </div>
       </div>
