@@ -7,7 +7,7 @@ A small live WebSocket relay for multiple CoreScope instances.
 - Connects to every configured upstream WebSocket.
 - Reconnects automatically with exponential backoff.
 - `GET /ws/{source}` forwards text and binary data frames from one source unchanged.
-- `GET /ws` combines all sources using a compact binary envelope.
+- `GET /ws` combines all sources as JSON (or a compact binary envelope with `?binary=1`).
 - Uses bounded Tokio broadcast channels.
 - Disconnects downstream clients that cannot keep up.
 - Does no packet parsing, deduplication, filtering, or persistence.
@@ -99,7 +99,42 @@ This does not require the admin token.
 
 ## Multiplexed envelope
 
-`/ws` always sends binary WebSocket messages. Each message is:
+`/ws` sends JSON text messages by default. Add `?binary=1` to receive the compact
+binary envelope instead.
+
+### JSON (default)
+
+Each message is a JSON object:
+
+```json
+{
+  "source": "analyzer-1",
+  "sequence": 42,
+  "timestamp_ms": 1717000000000,
+  "kind": 1,
+  "encoding": "utf8",
+  "payload": "..."
+}
+```
+
+`kind` is `1` for text and `2` for binary. Text payloads are inlined with
+`encoding: "utf8"`; binary payloads are base64-encoded with `encoding: "base64"`.
+
+```js
+const ws = new WebSocket("ws://localhost:8080/ws");
+ws.onmessage = (event) => {
+  const frame = JSON.parse(event.data);
+  const payload =
+    frame.encoding === "base64"
+      ? Uint8Array.from(atob(frame.payload), (c) => c.charCodeAt(0))
+      : frame.payload;
+  console.log({ ...frame, payload });
+};
+```
+
+### Binary (`?binary=1`)
+
+With `?binary=1`, each WebSocket message is the compact binary envelope:
 
 ```text
 magic          4 bytes   ASCII "CSR1"
@@ -143,7 +178,7 @@ function decodeRelayFrame(arrayBuffer) {
   return { kind, source, sequence, receivedAtMs, payload };
 }
 
-const ws = new WebSocket("ws://localhost:8080/ws");
+const ws = new WebSocket("ws://localhost:8080/ws?binary=1");
 ws.binaryType = "arraybuffer";
 ws.onmessage = (event) => console.log(decodeRelayFrame(event.data));
 ```

@@ -471,7 +471,7 @@
             <span class="endpoint-path mono">/ws</span>
           </div>
           <div class="endpoint-body">
-            <p>Multiplexed stream of every connected analyzer's packets, tagged by source.</p>
+            <p>Multiplexed stream of every connected analyzer's packets, tagged by source. Sends JSON by default; add <code>?binary=1</code> for the compact binary envelope.</p>
             <p>Filter to specific sources with a repeated <code>source</code> query param or a comma-separated <code>sources</code> list.</p>
             <pre><code>wscat -c "ws://{{HOSTNAME}}/ws?sources=analyzer-1,analyzer-2"</code></pre>
           </div>

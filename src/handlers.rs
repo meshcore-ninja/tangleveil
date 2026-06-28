@@ -17,7 +17,7 @@ use crate::{
     admin,
     connection_state::ConnectionState,
     frame::RawFrame,
-    multiplex::source_id_from_multiplex_frame,
+    multiplex::{decode_multiplex_frame_json, source_id_from_multiplex_frame},
     state::AppState,
     telemetry,
 };
@@ -28,6 +28,21 @@ struct MultiplexQuery {
     source: Vec<String>,
     #[serde(default)]
     sources: Option<String>,
+    #[serde(default, deserialize_with = "de_bool_flag")]
+    binary: bool,
+}
+
+/// Accept the usual truthy spellings for a query flag: `?binary=1`, `binary=true`,
+/// or a bare `?binary` (empty value).
+fn de_bool_flag<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Option::<String>::deserialize(deserializer)?;
+    Ok(match raw.as_deref() {
+        None => false,
+        Some(v) => matches!(v.trim().to_ascii_lowercase().as_str(), "" | "1" | "true" | "yes" | "on"),
+    })
 }
 
 impl MultiplexQuery {
@@ -104,6 +119,7 @@ async fn multiplex_ws(
     Query(query): Query<MultiplexQuery>,
     State(state): State<AppState>,
 ) -> Response {
+    let binary = query.binary;
     let requested = query.requested_source_ids();
     let source_filter = if requested.is_empty() {
         None
@@ -126,7 +142,7 @@ async fn multiplex_ws(
     };
 
     ws.on_upgrade(move |socket| {
-        serve_multiplex_client(socket, state.multiplex_tx.subscribe(), source_filter)
+        serve_multiplex_client(socket, state.multiplex_tx.subscribe(), source_filter, binary)
     })
 }
 
@@ -150,6 +166,7 @@ async fn serve_multiplex_client(
     mut socket: WebSocket,
     mut rx: broadcast::Receiver<Bytes>,
     source_filter: Option<HashSet<String>>,
+    binary: bool,
 ) {
     loop {
         tokio::select! {
@@ -165,7 +182,21 @@ async fn serve_multiplex_client(
                             }
                         }
 
-                        if socket.send(Message::Binary(frame)).await.is_err() {
+                        let message = if binary {
+                            Message::Binary(frame)
+                        } else {
+                            let Some(json) = decode_multiplex_frame_json(&frame) else {
+                                // Skip frames we can't project to JSON rather than
+                                // dropping the whole client.
+                                continue;
+                            };
+                            match serde_json::to_string(&json) {
+                                Ok(text) => Message::Text(Utf8Bytes::from(text)),
+                                Err(_) => continue,
+                            }
+                        };
+
+                        if socket.send(message).await.is_err() {
                             break;
                         }
                     }
