@@ -200,6 +200,7 @@ pub async fn reload_from_disk(state: &AppState, supervisor: &mut SourceSuperviso
 
     match crate::config::load_static_html(&loaded.static_path).await {
         Ok(html) => {
+            let html = crate::config::render_static_html(&html, &loaded.config.hostname);
             *state.static_html.write().expect("static html lock poisoned") = Arc::from(html);
         }
         Err(error) => {

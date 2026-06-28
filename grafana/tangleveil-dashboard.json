@@ -27,6 +27,18 @@
         "multi": true,
         "current": { "text": "All", "value": "$__all" },
         "refresh": 2
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "label": "Tangleveil instance",
+        "description": "process_* metrics have no app-specific prefix; pick the right scrape target if more than one process exposes them.",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "query": "label_values(corescope_relay_packets_total, instance)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2
       }
     ]
   },
@@ -206,24 +218,89 @@
     { "id": 102, "type": "row", "title": "Connection health", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 } },
     {
       "id": 20,
-      "type": "state-timeline",
-      "title": "Source connected (1 = connected, 0 = not)",
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 15 },
+      "type": "table",
+      "title": "Source connection status",
+      "description": "Current state of every analyzer. Sort by Status to surface down sources first.",
+      "gridPos": { "h": 12, "w": 10, "x": 0, "y": 15 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
           "expr": "corescope_relay_source_connected{source=~\"$source\"}",
-          "legendFormat": "{{source}}",
+          "format": "table",
+          "instant": true,
           "refId": "A"
+        },
+        {
+          "expr": "time() - corescope_relay_last_packet_timestamp_seconds{source=~\"$source\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true },
+            "indexByName": { "source": 0, "Value #A": 1, "Value #B": 2 },
+            "renameByName": { "source": "Source", "Value #A": "Status", "Value #B": "Idle (s)" }
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "mappings": [
-            { "type": "value", "options": { "0": { "text": "down", "color": "red" }, "1": { "text": "up", "color": "green" } } }
-          ]
+          "custom": { "cellOptions": { "type": "auto" } }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Status" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "0": { "text": "down", "color": "red" }, "1": { "text": "up", "color": "green" } } }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "green", "value": 1 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Idle (s)" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "orange", "value": 60 },
+                    { "color": "red", "value": 300 }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Status", "desc": false }]
       }
     },
     {
@@ -231,7 +308,7 @@
       "type": "timeseries",
       "title": "Seconds since last packet per source",
       "description": "Flags analyzers that are connected but have gone quiet.",
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 15 },
+      "gridPos": { "h": 12, "w": 14, "x": 10, "y": 15 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -256,13 +333,14 @@
           }
         },
         "overrides": []
-      }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] } }
     },
     {
       "id": 22,
       "type": "timeseries",
       "title": "Reconnects / errors per source (rate, 5m)",
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 22 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 27 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
@@ -276,18 +354,23 @@
           "refId": "B"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] } }
     },
 
-    { "id": 103, "type": "row", "title": "Process", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 } },
+    { "id": 103, "type": "row", "title": "Process", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 } },
     {
       "id": 30,
       "type": "timeseries",
       "title": "CPU usage",
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 30 },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 36 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
-        { "expr": "rate(process_cpu_seconds_total[1m]) * 100", "legendFormat": "cpu", "refId": "A" }
+        {
+          "expr": "rate(process_cpu_seconds_total{instance=~\"$instance\"}[1m]) * 100",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
       ],
       "fieldConfig": { "defaults": { "unit": "percent", "min": 0 }, "overrides": [] }
     },
@@ -295,10 +378,14 @@
       "id": 31,
       "type": "timeseries",
       "title": "Resident memory",
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 30 },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 36 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
-        { "expr": "process_resident_memory_bytes", "legendFormat": "rss", "refId": "A" }
+        {
+          "expr": "process_resident_memory_bytes{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
       ],
       "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
     },
@@ -306,11 +393,19 @@
       "id": 32,
       "type": "timeseries",
       "title": "Open file descriptors",
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 30 },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 36 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
-        { "expr": "process_open_fds", "legendFormat": "open", "refId": "A" },
-        { "expr": "process_max_fds", "legendFormat": "max", "refId": "B" }
+        {
+          "expr": "process_open_fds{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} open",
+          "refId": "A"
+        },
+        {
+          "expr": "process_max_fds{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} max",
+          "refId": "B"
+        }
       ],
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
     }

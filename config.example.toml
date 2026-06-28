@@ -6,6 +6,10 @@ sources_file = "sources.toml"
 # Reloaded from disk on /admin/reload and SIGHUP, no rebuild required.
 static_file = "static/index.html"
 
+# Public host:port shown in the status page's example curl/wscat commands.
+# Leave empty to show a generic "host" placeholder instead.
+hostname = "localhost:8080"
+
 # Reconnect backoff for upstream analyzers.
 reconnect_initial_delay_secs = 1
 reconnect_max_delay_secs = 30

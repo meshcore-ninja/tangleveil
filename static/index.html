@@ -315,6 +315,18 @@
       border-top: 1px solid var(--border);
       color: var(--muted);
       font-size: 0.85rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 0.9rem;
+      align-items: center;
+    }
+    footer a {
+      color: var(--muted);
+      text-decoration: none;
+    }
+    footer a:hover {
+      color: var(--accent);
+      text-decoration: underline;
     }
   </style>
 </head>
@@ -352,6 +364,24 @@
             <div class="spark" id="spark-kbps"></div>
           </div>
         </div>
+        <div class="stat">
+          <div class="label">Connected clients</div>
+          <div class="value" id="stat-clients">—</div>
+        </div>
+        <div class="stat">
+          <div class="label">CPU</div>
+          <div class="value-row">
+            <div class="value" id="stat-cpu">—</div>
+            <div class="spark" id="spark-cpu"></div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="label">Memory</div>
+          <div class="value-row">
+            <div class="value" id="stat-memory">—</div>
+            <div class="spark" id="spark-memory"></div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -381,8 +411,8 @@
       <p class="usage-intro">
         Connect a WebSocket client to one of the endpoints below to receive CoreScope
         packet streams, or poll the JSON endpoints for status. Replace
-        <code>ws://host</code> with <code>wss://host</code> when this page is served
-        over HTTPS.
+        <code>ws://{{HOSTNAME}}</code> with <code>wss://{{HOSTNAME}}</code> when this
+        page is served over HTTPS.
       </p>
       <div class="panel">
         <div class="endpoint-row">
@@ -393,7 +423,7 @@
           <div class="endpoint-body">
             <p>Multiplexed stream of every connected analyzer's packets, tagged by source.</p>
             <p>Filter to specific sources with a repeated <code>source</code> query param or a comma-separated <code>sources</code> list.</p>
-            <pre><code>wscat -c "ws://host/ws?sources=analyzer-1,analyzer-2"</code></pre>
+            <pre><code>wscat -c "ws://{{HOSTNAME}}/ws?sources=analyzer-1,analyzer-2"</code></pre>
           </div>
         </div>
         <div class="endpoint-row">
@@ -403,7 +433,7 @@
           </div>
           <div class="endpoint-body">
             <p>Raw, untagged packet stream for a single analyzer, identified by its source id from the table above.</p>
-            <pre><code>wscat -c "ws://host/ws/analyzer-1"</code></pre>
+            <pre><code>wscat -c "ws://{{HOSTNAME}}/ws/analyzer-1"</code></pre>
           </div>
         </div>
         <div class="endpoint-row">
@@ -422,7 +452,7 @@
           </div>
           <div class="endpoint-body">
             <p>JSON list of configured analyzers and their current connection state.</p>
-            <pre><code>curl http://host/sources</code></pre>
+            <pre><code>curl http://{{HOSTNAME}}/sources</code></pre>
           </div>
         </div>
         <div class="endpoint-row">
@@ -442,14 +472,16 @@
           <div class="endpoint-body">
             <p>Reloads configuration and sources from disk without restarting the process.</p>
             <p>Requires an admin token: <code>Authorization: Bearer &lt;token&gt;</code>.</p>
-            <pre><code>curl -X POST -H "Authorization: Bearer &lt;token&gt;" http://host/admin/reload</code></pre>
+            <pre><code>curl -X POST -H "Authorization: Bearer &lt;token&gt;" http://{{HOSTNAME}}/admin/reload</code></pre>
           </div>
         </div>
       </div>
     </section>
 
     <footer>
-      Tangleveil &middot; CoreScope telemetry proxy
+      <span>Tangleveil &middot; CoreScope telemetry proxy</span>
+      <span>v{{VERSION}}</span>
+      <a href="https://github.com/meshcore-ninja/tangleveil" target="_blank" rel="noopener noreferrer">github.com/meshcore-ninja/tangleveil</a>
     </footer>
   </main>
 
@@ -459,13 +491,20 @@
     const statAnalyzers = document.getElementById("stat-analyzers");
     const statPps = document.getElementById("stat-pps");
     const statKbps = document.getElementById("stat-kbps");
+    const statClients = document.getElementById("stat-clients");
+    const statCpu = document.getElementById("stat-cpu");
+    const statMemory = document.getElementById("stat-memory");
     const sourcesBody = document.getElementById("sources-body");
     const sparkPps = document.getElementById("spark-pps");
     const sparkKbps = document.getElementById("spark-kbps");
+    const sparkCpu = document.getElementById("spark-cpu");
+    const sparkMemory = document.getElementById("spark-memory");
 
     const HISTORY_LEN = 30;
     const ppsHistory = [];
     const kbpsHistory = [];
+    const cpuHistory = [];
+    const memoryHistory = [];
     const sourceHistory = new Map();
 
     function pushHistory(arr, value) {
@@ -488,6 +527,18 @@
         return `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${(barW * 0.65).toFixed(2)}" height="${h.toFixed(2)}" rx="1"></rect>`;
       }).join("");
       return `<svg class="spark${liveClass ? " live" : ""}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${bars}</svg>`;
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return `${bytes} B`;
+      const units = ["KB", "MB", "GB", "TB"];
+      let value = bytes / 1024;
+      let unit = 0;
+      while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit += 1;
+      }
+      return `${value.toFixed(1)} ${units[unit]}`;
     }
 
     function formatDuration(secs) {
@@ -518,11 +569,18 @@
       statAnalyzers.className = `value ${connected === data.sources.length && data.sources.length > 0 ? "ok" : connected === 0 && data.sources.length > 0 ? "bad" : ""}`;
       statPps.textContent = data.pps.toFixed(1);
       statKbps.textContent = data.kbps.toFixed(1);
+      statClients.textContent = data.clients;
+      statCpu.textContent = `${data.cpu_percent.toFixed(1)}%`;
+      statMemory.textContent = formatBytes(data.memory_bytes);
 
       pushHistory(ppsHistory, data.pps);
       pushHistory(kbpsHistory, data.kbps);
+      pushHistory(cpuHistory, data.cpu_percent);
+      pushHistory(memoryHistory, data.memory_bytes);
       sparkPps.innerHTML = sparkline(ppsHistory, true);
       sparkKbps.innerHTML = sparkline(kbpsHistory, true);
+      sparkCpu.innerHTML = sparkline(cpuHistory, true);
+      sparkMemory.innerHTML = sparkline(memoryHistory, true);
 
       if (data.sources.length === 0) {
         sourcesBody.innerHTML = `<tr class="empty-row"><td colspan="6">No sources configured.</td></tr>`;

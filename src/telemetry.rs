@@ -36,6 +36,9 @@ pub struct TelemetrySnapshot {
     pub sources: Vec<SourceTelemetry>,
     pub pps: f64,
     pub kbps: f64,
+    pub cpu_percent: f64,
+    pub memory_bytes: u64,
+    pub clients: usize,
 }
 
 pub fn channel() -> (
@@ -50,6 +53,9 @@ pub fn spawn_broadcaster(state: AppState) {
         let mut last_packets = HashMap::new();
         let mut last_bytes = HashMap::new();
         let mut last_sample = Instant::now();
+        let mut last_cpu_seconds = metrics_process::collector::collect()
+            .cpu_seconds_total
+            .unwrap_or(0.0);
         let mut interval = time::interval(TELEMETRY_INTERVAL);
         interval.tick().await;
 
@@ -61,7 +67,13 @@ pub fn spawn_broadcaster(state: AppState) {
             last_sample = now;
 
             let started = Instant::now();
-            let snapshot = build_snapshot(&state, &mut last_packets, &mut last_bytes, elapsed_secs);
+            let snapshot = build_snapshot(
+                &state,
+                &mut last_packets,
+                &mut last_bytes,
+                &mut last_cpu_seconds,
+                elapsed_secs,
+            );
             let generated_in = started.elapsed();
 
             let serialize_started = Instant::now();
@@ -151,6 +163,7 @@ fn build_snapshot(
     state: &AppState,
     last_packets: &mut HashMap<String, u64>,
     last_bytes: &mut HashMap<String, u64>,
+    last_cpu_seconds: &mut f64,
     elapsed_secs: f64,
 ) -> TelemetrySnapshot {
     let sources_guard = state.sources.read().expect("sources lock poisoned");
@@ -160,14 +173,28 @@ fn build_snapshot(
         .collect::<Vec<_>>();
     sources.sort_by(|a, b| a.id.cmp(&b.id));
 
+    let source_clients = sources_guard
+        .values()
+        .map(|runtime| runtime.raw_tx.receiver_count())
+        .sum::<usize>();
+    drop(sources_guard);
+
     let pps = sources.iter().map(|source| source.packets).sum();
     // `bytes` is already a per-second rate; convert to kilobits per second.
     let kbps = sources.iter().map(|source| source.bytes).sum::<f64>() * 8.0 / 1000.0;
+
+    let process = metrics_process::collector::collect();
+    let cpu_seconds_total = process.cpu_seconds_total.unwrap_or(*last_cpu_seconds);
+    let cpu_percent = ((cpu_seconds_total - *last_cpu_seconds) / elapsed_secs * 100.0).max(0.0);
+    *last_cpu_seconds = cpu_seconds_total;
 
     TelemetrySnapshot {
         sources,
         pps,
         kbps,
+        cpu_percent,
+        memory_bytes: process.resident_memory_bytes.unwrap_or(0),
+        clients: state.multiplex_tx.receiver_count() + source_clients,
     }
 }
 

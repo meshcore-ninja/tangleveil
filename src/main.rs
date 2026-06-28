@@ -53,6 +53,7 @@ async fn main() -> Result<()> {
     validate_config(&loaded.config)?;
 
     let static_html = tangleveil::config::load_static_html(&loaded.static_path).await?;
+    let static_html = tangleveil::config::render_static_html(&static_html, &loaded.config.hostname);
 
     let telemetry_metrics = metrics::install();
     metrics::spawn_upkeep(telemetry_metrics.prometheus.clone());

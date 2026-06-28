@@ -28,6 +28,8 @@ struct ConfigFile {
     sources_file: String,
     #[serde(default = "default_static_file")]
     static_file: String,
+    #[serde(default)]
+    hostname: String,
     #[serde(default = "default_reconnect_initial_delay_secs")]
     reconnect_initial_delay_secs: u64,
     #[serde(default = "default_reconnect_max_delay_secs")]
@@ -63,6 +65,7 @@ pub struct Config {
     pub reconnect: ReconnectPolicy,
     pub verbose: bool,
     pub admin_token: String,
+    pub hostname: String,
 }
 
 #[derive(Debug)]
@@ -113,6 +116,7 @@ pub async fn load_config(path: &str) -> Result<LoadedConfig> {
             },
             verbose: file.verbose,
             admin_token: file.admin_token,
+            hostname: file.hostname,
         },
         sources_path,
         static_path,
@@ -124,6 +128,15 @@ pub async fn load_static_html(path: &Path) -> Result<String> {
         .await
         .with_context(|| format!("could not read static html file {}", path.display()))?;
     Ok(data)
+}
+
+/// Fills in `{{HOSTNAME}}` and `{{VERSION}}` placeholders in the status page.
+/// `{{HOSTNAME}}` falls back to the literal word "host" when unconfigured.
+/// `{{VERSION}}` is always the binary's own compiled-in crate version.
+pub fn render_static_html(html: &str, hostname: &str) -> String {
+    let hostname = if hostname.is_empty() { "host" } else { hostname };
+    html.replace("{{HOSTNAME}}", hostname)
+        .replace("{{VERSION}}", env!("CARGO_PKG_VERSION"))
 }
 
 async fn load_sources_file(path: &Path) -> Result<Vec<SourceConfig>> {
