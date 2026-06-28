@@ -347,7 +347,10 @@
       <div class="stats">
         <div class="stat">
           <div class="label">Analyzers online</div>
-          <div class="value" id="stat-analyzers">—</div>
+          <div class="value-row">
+            <div class="value" id="stat-analyzers">—</div>
+            <div class="spark" id="spark-analyzers"></div>
+          </div>
         </div>
         <div class="stat">
           <div class="label">Packets / sec</div>
@@ -357,7 +360,7 @@
           </div>
         </div>
         <div class="stat">
-          <div class="label">Throughput (kbit/s)</div>
+          <div class="label">Throughput</div>
           <div class="value-row">
             <div class="value" id="stat-kbps">—</div>
             <div class="spark" id="spark-kbps"></div>
@@ -365,7 +368,10 @@
         </div>
         <div class="stat">
           <div class="label">Connected clients</div>
-          <div class="value" id="stat-clients">—</div>
+          <div class="value-row">
+            <div class="value" id="stat-clients">—</div>
+            <div class="spark" id="spark-clients"></div>
+          </div>
         </div>
         <div class="stat">
           <div class="label">CPU</div>
@@ -494,14 +500,18 @@
     const statCpu = document.getElementById("stat-cpu");
     const statMemory = document.getElementById("stat-memory");
     const sourcesBody = document.getElementById("sources-body");
+    const sparkAnalyzers = document.getElementById("spark-analyzers");
     const sparkPps = document.getElementById("spark-pps");
     const sparkKbps = document.getElementById("spark-kbps");
+    const sparkClients = document.getElementById("spark-clients");
     const sparkCpu = document.getElementById("spark-cpu");
     const sparkMemory = document.getElementById("spark-memory");
 
     const HISTORY_LEN = 30;
+    const analyzersHistory = [];
     const ppsHistory = [];
     const kbpsHistory = [];
+    const clientsHistory = [];
     const cpuHistory = [];
     const memoryHistory = [];
     const sourceHistory = new Map();
@@ -526,6 +536,11 @@
         return `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${(barW * 0.65).toFixed(2)}" height="${h.toFixed(2)}" rx="1"></rect>`;
       }).join("");
       return `<svg class="spark${liveClass ? " live" : ""}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${bars}</svg>`;
+    }
+
+    function formatKbps(kbps) {
+      if (kbps >= 1000) return `${(kbps / 1000).toFixed(2)} Mbit/s`;
+      return `${kbps.toFixed(1)} kbit/s`;
     }
 
     function formatBytes(bytes) {
@@ -567,17 +582,21 @@
       statAnalyzers.textContent = `${connected}/${data.sources.length}`;
       statAnalyzers.className = `value ${connected === data.sources.length && data.sources.length > 0 ? "ok" : connected === 0 && data.sources.length > 0 ? "bad" : ""}`;
       statPps.textContent = data.pps.toFixed(1);
-      statKbps.textContent = data.kbps.toFixed(1);
+      statKbps.textContent = formatKbps(data.kbps);
       statClients.textContent = data.clients;
-      statCpu.textContent = `${data.cpu_percent.toFixed(1)}%`;
+      statCpu.textContent = `${data.cpu_percent.toFixed(2)}%`;
       statMemory.textContent = formatBytes(data.memory_bytes);
 
+      pushHistory(analyzersHistory, connected);
       pushHistory(ppsHistory, data.pps);
       pushHistory(kbpsHistory, data.kbps);
+      pushHistory(clientsHistory, data.clients);
       pushHistory(cpuHistory, data.cpu_percent);
       pushHistory(memoryHistory, data.memory_bytes);
+      sparkAnalyzers.innerHTML = sparkline(analyzersHistory, true);
       sparkPps.innerHTML = sparkline(ppsHistory, true);
       sparkKbps.innerHTML = sparkline(kbpsHistory, true);
+      sparkClients.innerHTML = sparkline(clientsHistory, true);
       sparkCpu.innerHTML = sparkline(cpuHistory, true);
       sparkMemory.innerHTML = sparkline(memoryHistory, true);
 

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::Arc,
     time::Instant,
 };
@@ -20,6 +20,10 @@ use crate::state::{AppState, SourceRuntime};
 
 const TELEMETRY_INTERVAL: Duration = Duration::from_secs(1);
 const TELEMETRY_CHANNEL_CAPACITY: usize = 16;
+/// OS-reported CPU time only advances in whole clock ticks (10ms on Linux), so a
+/// 1-second delta quantizes to whole-percent steps. Average over a longer window
+/// instead to get finer-grained readings without losing responsiveness.
+const CPU_WINDOW_SAMPLES: usize = 5;
 
 #[derive(Debug, Serialize)]
 pub struct SourceTelemetry {
@@ -53,9 +57,11 @@ pub fn spawn_broadcaster(state: AppState) {
         let mut last_packets = HashMap::new();
         let mut last_bytes = HashMap::new();
         let mut last_sample = Instant::now();
-        let mut last_cpu_seconds = metrics_process::collector::collect()
-            .cpu_seconds_total
-            .unwrap_or(0.0);
+        let mut cpu_history: VecDeque<(Instant, f64)> = VecDeque::with_capacity(CPU_WINDOW_SAMPLES);
+        cpu_history.push_back((
+            last_sample,
+            metrics_process::collector::collect().cpu_seconds_total.unwrap_or(0.0),
+        ));
         let mut interval = time::interval(TELEMETRY_INTERVAL);
         interval.tick().await;
 
@@ -71,7 +77,8 @@ pub fn spawn_broadcaster(state: AppState) {
                 &state,
                 &mut last_packets,
                 &mut last_bytes,
-                &mut last_cpu_seconds,
+                &mut cpu_history,
+                now,
                 elapsed_secs,
             );
             let generated_in = started.elapsed();
@@ -163,7 +170,8 @@ fn build_snapshot(
     state: &AppState,
     last_packets: &mut HashMap<String, u64>,
     last_bytes: &mut HashMap<String, u64>,
-    last_cpu_seconds: &mut f64,
+    cpu_history: &mut VecDeque<(Instant, f64)>,
+    now: Instant,
     elapsed_secs: f64,
 ) -> TelemetrySnapshot {
     let sources_guard = state.sources.read().expect("sources lock poisoned");
@@ -184,9 +192,17 @@ fn build_snapshot(
     let kbps = sources.iter().map(|source| source.bytes).sum::<f64>() * 8.0 / 1000.0;
 
     let process = metrics_process::collector::collect();
-    let cpu_seconds_total = process.cpu_seconds_total.unwrap_or(*last_cpu_seconds);
-    let cpu_percent = ((cpu_seconds_total - *last_cpu_seconds) / elapsed_secs * 100.0).max(0.0);
-    *last_cpu_seconds = cpu_seconds_total;
+    let cpu_seconds_total = process
+        .cpu_seconds_total
+        .unwrap_or_else(|| cpu_history.back().map(|(_, secs)| *secs).unwrap_or(0.0));
+
+    if cpu_history.len() >= CPU_WINDOW_SAMPLES {
+        cpu_history.pop_front();
+    }
+    cpu_history.push_back((now, cpu_seconds_total));
+    let (oldest_at, oldest_secs) = *cpu_history.front().expect("just pushed a sample");
+    let window_secs = now.duration_since(oldest_at).as_secs_f64().max(0.001);
+    let cpu_percent = ((cpu_seconds_total - oldest_secs) / window_secs * 100.0).max(0.0);
 
     TelemetrySnapshot {
         sources,
