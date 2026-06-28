@@ -7,7 +7,6 @@ use std::{
     },
 };
 
-use bytes::Bytes;
 use metrics::{Counter, Gauge, counter, gauge};
 use tokio::sync::{Mutex, broadcast};
 
@@ -16,7 +15,7 @@ use crate::{
     connection_state::ConnectionState,
     frame::RawFrame,
     metrics::{TelemetryMetrics, ThroughputMetrics},
-    multiplex::unix_time_ms,
+    multiplex::{MultiplexFrame, unix_time_ms},
     sources::SourceSupervisor,
 };
 
@@ -170,7 +169,7 @@ pub struct AppState {
     pub listen: Arc<RwLock<String>>,
     pub channel_capacity: Arc<RwLock<usize>>,
     pub reconnect: Arc<RwLock<ReconnectPolicy>>,
-    pub multiplex_tx: broadcast::Sender<Bytes>,
+    pub multiplex_tx: broadcast::Sender<Arc<MultiplexFrame>>,
     pub telemetry_tx: broadcast::Sender<Arc<str>>,
     pub latest_telemetry: Arc<RwLock<Option<Arc<str>>>>,
     pub sources: Arc<RwLock<HashMap<String, Arc<SourceRuntime>>>>,

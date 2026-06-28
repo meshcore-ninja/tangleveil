@@ -112,22 +112,32 @@ Each message is a JSON object:
   "sequence": 42,
   "timestamp_ms": 1717000000000,
   "kind": 1,
-  "encoding": "utf8",
-  "payload": "..."
+  "encoding": "json",
+  "payload": { "node": "!abcd", "rssi": -71 }
 }
 ```
 
-`kind` is `1` for text and `2` for binary. Text payloads are inlined with
-`encoding: "utf8"`; binary payloads are base64-encoded with `encoding: "base64"`.
+`kind` is `1` for text and `2` for binary. The `encoding` field tells you how to
+read `payload`:
+
+| `encoding` | `payload` is… | when |
+| --- | --- | --- |
+| `"json"` | a nested JSON value | text frame that is itself valid JSON (no double-escaping) |
+| `"utf8"` | a JSON string | text frame that isn't valid JSON |
+| `"base64"` | a base64 string | binary (or non-UTF-8) frame |
 
 ```js
 const ws = new WebSocket("ws://localhost:8080/ws");
 ws.onmessage = (event) => {
   const frame = JSON.parse(event.data);
-  const payload =
-    frame.encoding === "base64"
-      ? Uint8Array.from(atob(frame.payload), (c) => c.charCodeAt(0))
-      : frame.payload;
+  let payload;
+  switch (frame.encoding) {
+    case "base64":
+      payload = Uint8Array.from(atob(frame.payload), (c) => c.charCodeAt(0));
+      break;
+    default: // "json" (already parsed) or "utf8" (string)
+      payload = frame.payload;
+  }
   console.log({ ...frame, payload });
 };
 ```

@@ -8,7 +8,6 @@ use std::{
 
 use anyhow::{Context, Result};
 use axum::extract::ws::Utf8Bytes;
-use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use tokio::{sync::broadcast, time::sleep};
 use tokio_tungstenite::{
@@ -27,13 +26,13 @@ use crate::{
     connection_state::ConnectionState,
     frame::RawFrame,
     metrics::ThroughputMetrics,
-    multiplex::{encode_multiplex_frame, unix_time_ms},
+    multiplex::{MultiplexFrame, encode_multiplex_frame, unix_time_ms},
     state::SourceRuntime,
 };
 
 pub async fn run_source_forever(
     runtime: Arc<SourceRuntime>,
-    multiplex_tx: broadcast::Sender<Bytes>,
+    multiplex_tx: broadcast::Sender<Arc<MultiplexFrame>>,
     throughput: Arc<ThroughputMetrics>,
     reconnect: Arc<std::sync::RwLock<ReconnectPolicy>>,
     cancel: CancellationToken,
@@ -217,7 +216,7 @@ async fn connect_source(
 async fn forward_source<S>(
     source: &crate::config::SourceConfig,
     runtime: &SourceRuntime,
-    multiplex_tx: &broadcast::Sender<Bytes>,
+    multiplex_tx: &broadcast::Sender<Arc<MultiplexFrame>>,
     throughput: &ThroughputMetrics,
     stream: tokio_tungstenite::WebSocketStream<S>,
     cancel: &CancellationToken,
@@ -260,7 +259,7 @@ where
 fn publish_frame(
     source: &crate::config::SourceConfig,
     runtime: &SourceRuntime,
-    multiplex_tx: &broadcast::Sender<Bytes>,
+    multiplex_tx: &broadcast::Sender<Arc<MultiplexFrame>>,
     throughput: &ThroughputMetrics,
     frame: RawFrame,
 ) {
@@ -280,5 +279,5 @@ fn publish_frame(
         frame.kind(),
         frame.payload(),
     );
-    let _ = multiplex_tx.send(multiplexed);
+    let _ = multiplex_tx.send(Arc::new(MultiplexFrame::new(multiplexed)));
 }

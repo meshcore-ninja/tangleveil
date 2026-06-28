@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use axum::{
     Json, Router,
@@ -7,7 +8,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use bytes::Bytes;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::broadcast;
@@ -17,7 +17,7 @@ use crate::{
     admin,
     connection_state::ConnectionState,
     frame::RawFrame,
-    multiplex::{decode_multiplex_frame_json, source_id_from_multiplex_frame},
+    multiplex::MultiplexFrame,
     state::AppState,
     telemetry,
 };
@@ -164,7 +164,7 @@ async fn source_ws(
 
 async fn serve_multiplex_client(
     mut socket: WebSocket,
-    mut rx: broadcast::Receiver<Bytes>,
+    mut rx: broadcast::Receiver<Arc<MultiplexFrame>>,
     source_filter: Option<HashSet<String>>,
     binary: bool,
 ) {
@@ -174,7 +174,7 @@ async fn serve_multiplex_client(
                 match result {
                     Ok(frame) => {
                         if let Some(filter) = &source_filter {
-                            let Some(source_id) = source_id_from_multiplex_frame(&frame) else {
+                            let Some(source_id) = frame.source_id() else {
                                 continue;
                             };
                             if !filter.contains(source_id) {
@@ -183,16 +183,14 @@ async fn serve_multiplex_client(
                         }
 
                         let message = if binary {
-                            Message::Binary(frame)
+                            Message::Binary(frame.binary())
                         } else {
-                            let Some(json) = decode_multiplex_frame_json(&frame) else {
-                                // Skip frames we can't project to JSON rather than
-                                // dropping the whole client.
-                                continue;
-                            };
-                            match serde_json::to_string(&json) {
-                                Ok(text) => Message::Text(Utf8Bytes::from(text)),
-                                Err(_) => continue,
+                            // Computed once per frame and shared across all JSON
+                            // clients; skip frames that can't be projected rather
+                            // than dropping the whole client.
+                            match frame.json() {
+                                Some(json) => Message::Text(json),
+                                None => continue,
                             }
                         };
 
