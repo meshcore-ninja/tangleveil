@@ -6,6 +6,7 @@
 # Local configuration (see *.example.toml)
 /config.toml
 /sources.toml
+/docker-compose.yml
 
 # Editor / OS
 .idea/
