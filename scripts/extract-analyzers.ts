@@ -87,7 +87,7 @@ for (const network of data.networks ?? []) {
         "[[sources]]",
         `id = ${tomlString(id)}`,
         `url = ${tomlString(url)}`,
-        `mapping = ${tomlString(id + ':' + (sourceNumber-1))}`,
+        `mapping = ${tomlString(network.id + ':' + (sourceNumber-1))}`,
       ];
 
       if (analyzer.headers && Object.keys(analyzer.headers).length > 0) {
