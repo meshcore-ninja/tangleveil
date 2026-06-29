@@ -51,7 +51,7 @@ function tomlHeaders(headers: Record<string, string>): string {
   return `{ ${values} }`;
 }
 
-const response = await fetch(DATA_URL);
+const response = await fetch(DATA_URL + '?' + Date.now());
 
 if (!response.ok) {
   throw new Error(
