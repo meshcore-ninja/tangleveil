@@ -75,6 +75,7 @@ async fn main() -> Result<()> {
         sources: Arc::new(RwLock::new(HashMap::new())),
         supervisor: Arc::new(tokio::sync::Mutex::new(SourceSupervisor::new())),
         admin_token: Arc::new(RwLock::new(loaded.config.admin_token.clone())),
+        user_agent: Arc::new(RwLock::new(loaded.config.user_agent.clone())),
         throughput: Arc::new(ThroughputMetrics::default()),
         metrics: telemetry_metrics,
         verbose,

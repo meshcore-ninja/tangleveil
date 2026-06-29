@@ -179,6 +179,7 @@ pub struct AppState {
     pub sources: Arc<RwLock<HashMap<String, Arc<SourceRuntime>>>>,
     pub supervisor: Arc<Mutex<SourceSupervisor>>,
     pub admin_token: Arc<RwLock<String>>,
+    pub user_agent: Arc<RwLock<String>>,
     pub throughput: Arc<ThroughputMetrics>,
     pub metrics: TelemetryMetrics,
     pub verbose: bool,

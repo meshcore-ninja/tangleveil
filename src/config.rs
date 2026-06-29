@@ -42,6 +42,8 @@ struct ConfigFile {
     verbose: bool,
     #[serde(default)]
     admin_token: String,
+    #[serde(default)]
+    user_agent: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,6 +68,7 @@ pub struct Config {
     pub verbose: bool,
     pub admin_token: String,
     pub hostname: String,
+    pub user_agent: String,
 }
 
 #[derive(Debug)]
@@ -137,6 +140,7 @@ pub async fn load_config(path: &str) -> Result<LoadedConfig> {
             verbose: file.verbose,
             admin_token: file.admin_token,
             hostname: file.hostname,
+            user_agent: file.user_agent,
         },
         sources_path,
         static_path,
@@ -177,6 +181,9 @@ pub fn validate_config(config: &Config) -> Result<()> {
     }
     if config.channel_capacity == 0 {
         bail!("channel_capacity must be greater than zero");
+    }
+    if config.user_agent.contains(['\r', '\n']) {
+        bail!("user_agent cannot contain newline characters");
     }
 
     let reconnect = &config.reconnect;

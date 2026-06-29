@@ -21,6 +21,10 @@ reconnect_offline_delay_secs = 300
 # placeholder to disable the admin API.
 admin_token = "change-me"
 
+# User-Agent sent on upstream WebSocket handshakes. Leave empty to use the
+# library default. Per-source headers in sources.toml can override this.
+# user_agent = "Tangleveil/0.1.0"
+
 # Extra telemetry timing logs and debug-level output when true.
 # Can also be enabled with --verbose / -v.
 verbose = false

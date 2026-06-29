@@ -35,6 +35,7 @@ pub async fn run_source_forever(
     multiplex_tx: broadcast::Sender<Arc<MultiplexFrame>>,
     throughput: Arc<ThroughputMetrics>,
     reconnect: Arc<std::sync::RwLock<ReconnectPolicy>>,
+    user_agent: Arc<std::sync::RwLock<String>>,
     cancel: CancellationToken,
 ) {
     let mut reconnect_delay = reconnect
@@ -55,7 +56,7 @@ pub async fn run_source_forever(
             continue;
         }
 
-        match connect_source(&source, &runtime, &cancel).await {
+        match connect_source(&source, &runtime, &user_agent, &cancel).await {
             Some(Ok(stream)) => {
                 reconnect_delay = reconnect
                     .read()
@@ -140,6 +141,7 @@ async fn sleep_or_cancel(duration: std::time::Duration, cancel: &CancellationTok
 async fn connect_source(
     source: &crate::config::SourceConfig,
     runtime: &SourceRuntime,
+    user_agent: &Arc<std::sync::RwLock<String>>,
     cancel: &CancellationToken,
 ) -> Option<Result<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>> {
     if cancel.is_cancelled() {
@@ -156,6 +158,23 @@ async fn connect_source(
             return Some(Err(error.into()));
         }
     };
+
+    if let Ok(ua) = user_agent.read() {
+        if !ua.is_empty() {
+            match HeaderValue::from_str(ua.as_str()) {
+                Ok(value) => {
+                    request
+                        .headers_mut()
+                        .insert(HeaderName::from_static("user-agent"), value);
+                }
+                Err(error) => {
+                    runtime.mark_disconnected();
+                    runtime.set_state(ConnectionState::Disconnected);
+                    return Some(Err(error.into()));
+                }
+            }
+        }
+    }
 
     for (name, value) in &source.headers {
         let name = match HeaderName::from_bytes(name.as_bytes()) {

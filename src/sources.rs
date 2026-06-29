@@ -44,6 +44,14 @@ impl SourceSupervisor {
             *reconnect = config.reconnect.clone();
         }
 
+        {
+            let mut user_agent = state
+                .user_agent
+                .write()
+                .expect("user agent lock poisoned");
+            *user_agent = config.user_agent.clone();
+        }
+
         let current_capacity = *state
             .channel_capacity
             .read()
@@ -168,9 +176,18 @@ fn spawn_upstream_task(
     let multiplex_tx = state.multiplex_tx.clone();
     let throughput = Arc::clone(&state.throughput);
     let reconnect = Arc::clone(&state.reconnect);
+    let user_agent = Arc::clone(&state.user_agent);
 
     tokio::spawn(async move {
-        upstream::run_source_forever(runtime, multiplex_tx, throughput, reconnect, cancel).await;
+        upstream::run_source_forever(
+            runtime,
+            multiplex_tx,
+            throughput,
+            reconnect,
+            user_agent,
+            cancel,
+        )
+        .await;
     })
 }
 
