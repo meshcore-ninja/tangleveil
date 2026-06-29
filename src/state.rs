@@ -11,7 +11,7 @@ use metrics::{Counter, Gauge, counter, gauge};
 use tokio::sync::{Mutex, broadcast};
 
 use crate::{
-    config::{ReconnectPolicy, SourceConfig},
+    config::{DedupPolicy, ReconnectPolicy, SourceConfig},
     connection_state::ConnectionState,
     frame::RawFrame,
     metrics::{TelemetryMetrics, ThroughputMetrics},
@@ -173,6 +173,7 @@ pub struct AppState {
     pub listen: Arc<RwLock<String>>,
     pub channel_capacity: Arc<RwLock<usize>>,
     pub reconnect: Arc<RwLock<ReconnectPolicy>>,
+    pub dedup: Arc<RwLock<DedupPolicy>>,
     pub multiplex_tx: broadcast::Sender<Arc<MultiplexFrame>>,
     pub telemetry_tx: broadcast::Sender<Arc<str>>,
     pub latest_telemetry: Arc<RwLock<Option<Arc<str>>>>,

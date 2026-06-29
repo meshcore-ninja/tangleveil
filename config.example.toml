@@ -17,6 +17,13 @@ reconnect_max_delay_secs = 30
 reconnect_offline_threshold_secs = 60
 reconnect_offline_delay_secs = 300
 
+# Content-dedup window for `/ws?dedupByContent` clients. `dedup_window_secs` is
+# the default a client gets; `?dedupWindowSecs=` may override it up to
+# `dedup_max_window_secs`. Larger windows catch more duplicates but hold more
+# hashes per connection in memory. Applied to new connections on reload.
+dedup_window_secs = 300
+dedup_max_window_secs = 3600
+
 # Bearer token required for /admin/* endpoints. Leave empty or keep the default
 # placeholder to disable the admin API.
 admin_token = "change-me"

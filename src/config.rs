@@ -12,6 +12,8 @@ const DEFAULT_RECONNECT_INITIAL_DELAY_SECS: u64 = 1;
 const DEFAULT_RECONNECT_MAX_DELAY_SECS: u64 = 30;
 const DEFAULT_RECONNECT_OFFLINE_THRESHOLD_SECS: u64 = 60;
 const DEFAULT_RECONNECT_OFFLINE_DELAY_SECS: u64 = 300;
+const DEFAULT_DEDUP_WINDOW_SECS: u64 = 300;
+const DEFAULT_DEDUP_MAX_WINDOW_SECS: u64 = 3600;
 const DISABLED_ADMIN_TOKEN: &str = "change-me";
 
 pub fn admin_enabled(token: &str) -> bool {
@@ -38,6 +40,12 @@ struct ConfigFile {
     reconnect_offline_threshold_secs: u64,
     #[serde(default = "default_reconnect_offline_delay_secs")]
     reconnect_offline_delay_secs: u64,
+    /// Default sliding window for `?dedupByContent` clients, in seconds.
+    #[serde(default = "default_dedup_window_secs")]
+    dedup_window_secs: u64,
+    /// Hard cap on the dedup window a client may request via `?dedupWindowSecs`.
+    #[serde(default = "default_dedup_max_window_secs")]
+    dedup_max_window_secs: u64,
     #[serde(default)]
     verbose: bool,
     #[serde(default)]
@@ -59,12 +67,22 @@ pub struct ReconnectPolicy {
     pub offline_delay: Duration,
 }
 
+/// How long the multiplex endpoint remembers content hashes for
+/// `?dedupByContent` clients. `default_window` is used when a client doesn't
+/// pass `?dedupWindowSecs`; `max_window` caps what a client may request.
+#[derive(Debug, Clone)]
+pub struct DedupPolicy {
+    pub default_window: Duration,
+    pub max_window: Duration,
+}
+
 #[derive(Debug)]
 pub struct Config {
     pub listen: String,
     pub channel_capacity: usize,
     pub sources: Vec<SourceConfig>,
     pub reconnect: ReconnectPolicy,
+    pub dedup: DedupPolicy,
     pub verbose: bool,
     pub admin_token: String,
     pub hostname: String,
@@ -137,6 +155,10 @@ pub async fn load_config(path: &str) -> Result<LoadedConfig> {
                 offline_threshold: Duration::from_secs(file.reconnect_offline_threshold_secs),
                 offline_delay: Duration::from_secs(file.reconnect_offline_delay_secs),
             },
+            dedup: DedupPolicy {
+                default_window: Duration::from_secs(file.dedup_window_secs),
+                max_window: Duration::from_secs(file.dedup_max_window_secs),
+            },
             verbose: file.verbose,
             admin_token: file.admin_token,
             hostname: file.hostname,
@@ -198,6 +220,14 @@ pub fn validate_config(config: &Config) -> Result<()> {
     }
     if reconnect.offline_delay.is_zero() {
         bail!("reconnect_offline_delay_secs must be greater than zero");
+    }
+
+    let dedup = &config.dedup;
+    if dedup.default_window.is_zero() {
+        bail!("dedup_window_secs must be greater than zero");
+    }
+    if dedup.max_window < dedup.default_window {
+        bail!("dedup_max_window_secs must be >= dedup_window_secs");
     }
 
     let mut ids = HashSet::new();
@@ -264,4 +294,12 @@ const fn default_reconnect_offline_threshold_secs() -> u64 {
 
 const fn default_reconnect_offline_delay_secs() -> u64 {
     DEFAULT_RECONNECT_OFFLINE_DELAY_SECS
+}
+
+const fn default_dedup_window_secs() -> u64 {
+    DEFAULT_DEDUP_WINDOW_SECS
+}
+
+const fn default_dedup_max_window_secs() -> u64 {
+    DEFAULT_DEDUP_MAX_WINDOW_SECS
 }

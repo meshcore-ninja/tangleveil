@@ -69,6 +69,7 @@ async fn main() -> Result<()> {
         listen: Arc::new(RwLock::new(loaded.config.listen.clone())),
         channel_capacity: Arc::new(RwLock::new(loaded.config.channel_capacity)),
         reconnect: Arc::new(RwLock::new(loaded.config.reconnect.clone())),
+        dedup: Arc::new(RwLock::new(loaded.config.dedup.clone())),
         multiplex_tx,
         telemetry_tx,
         latest_telemetry: Arc::new(RwLock::new(None)),

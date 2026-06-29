@@ -239,6 +239,11 @@ pub async fn reload_from_disk(state: &AppState, supervisor: &mut SourceSuperviso
         *admin_token = loaded.config.admin_token.clone();
     }
 
+    {
+        let mut dedup = state.dedup.write().expect("dedup policy lock poisoned");
+        *dedup = loaded.config.dedup.clone();
+    }
+
     supervisor.apply(state, &loaded.config)?;
     info!("configuration reloaded");
     Ok(())

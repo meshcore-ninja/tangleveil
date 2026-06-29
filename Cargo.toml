@@ -24,3 +24,10 @@ tokio-util = { version = "0.7", features = ["rt"] }
 metrics = "0.24"
 metrics-process = "2.4"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
+# jaq powers the experimental `?jaq=` filter. The `sync` feature switches
+# jaq-json's value type from Rc to Arc so the compiled filter is `Send` and can
+# live in the (multi-threaded) axum websocket task; `serde` enables the
+# serde_json <-> Val conversion we use for input/output.
+jaq-core = "3.1.0"
+jaq-std = "3.0.1"
+jaq-json = { version = "2.0.1", features = ["sync", "serde"] }

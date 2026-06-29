@@ -8,9 +8,10 @@ A small live WebSocket relay for multiple CoreScope instances.
 - Reconnects automatically with exponential backoff.
 - `GET /ws/{source}` forwards text and binary data frames from one source unchanged.
 - `GET /ws` combines all sources as JSON (or a compact binary envelope with `?binary=1`).
+- Optional opt-in [filtering](#filtering-ws) on `/ws` by source, payload type, content dedup, or a jq program.
 - Uses bounded Tokio broadcast channels.
 - Disconnects downstream clients that cannot keep up.
-- Does no packet parsing, deduplication, filtering, or persistence.
+- Stores nothing: no persistence, and dedup state is per-connection and time-bounded.
 
 ## Run
 
@@ -73,6 +74,7 @@ Tangleveil can reload `config.toml` and the sources file from disk without resta
 - reconnects sources whose URL or headers changed
 - applies reconnect backoff settings from config
 - refreshes the admin token
+- updates the dedup window (applied to connections opened after the reload)
 
 Changes to `listen` are ignored until you restart the process.
 
@@ -193,6 +195,64 @@ ws.binaryType = "arraybuffer";
 ws.onmessage = (event) => console.log(decodeRelayFrame(event.data));
 ```
 
+## Filtering `/ws`
+
+The multiplexed endpoint accepts optional query parameters that narrow what a
+client receives. They compose: a frame must pass every filter that is set.
+
+| Parameter | Example | Effect |
+| --- | --- | --- |
+| `source` / `sources` | `?sources=prague,brno` | Only frames from these source ids. Repeatable `?source=` or a comma-separated `?sources=`. Unknown ids fail the handshake with `400`. |
+| `payloadTypes` | `?payloadTypes=ADVERT,REQ` | Only frames whose MeshCore packet type is in the list (case-insensitive). Frames without a recognizable type are dropped. |
+| `dedupByContent` | `?dedupByContent` | Suppress repeats of the same packet — the same content observed by many observers/sources, identified by CoreScope's `data.hash` — within a sliding window. |
+| `dedupWindowSecs` | `?dedupByContent&dedupWindowSecs=120` | Dedup window length in seconds. Defaults to `dedup_window_secs` from config, clamped to `1..=dedup_max_window_secs` (defaults `300` / `3600`). |
+| `jaq` *(experimental)* | `?jaq=select(.payload.data.decoded.header.payloadTypeName=="ADVERT")` | Run a [jq](https://jqlang.github.io/jq/)-style program over each frame's JSON projection. |
+| `binary` | `?binary=1` | Emit the compact binary envelope instead of JSON (see below). |
+
+```js
+// Live adverts from the whole world, each unique packet once:
+const ws = new WebSocket("ws://localhost:8080/ws?payloadTypes=ADVERT&dedupByContent");
+```
+
+### Filtering is computed once, shared by all
+
+Each incoming frame is wrapped in a single `Arc` shared by every subscriber. The
+fields filters need — source id, payload type, content hash — and the JSON
+projection are each parsed/encoded **at most once per frame**, lazily, by the
+first client that needs them, then reused by everyone else. So a thousand clients
+asking for `?payloadTypes=ADVERT` cost one payload-type parse per frame, not a
+thousand. Per-client work is reduced to a set lookup.
+
+Dedup state is the one necessarily per-client piece (a globally shared "seen" set
+would starve clients that connect mid-window). It is a small two-generation set
+keyed by content hash, bounded by the time window rather than by count — so it
+holds only the last `1`–`2` windows of hashes and prunes a whole generation at
+once, with no per-entry expiry bookkeeping.
+
+### `jaq` (experimental)
+
+`?jaq=PROGRAM` runs a jq program (via the [`jaq`](https://github.com/01mf02/jaq)
+interpreter) over each frame's JSON projection — the `{source, sequence,
+timestamp_ms, kind, encoding, payload}` object documented below. jq semantics
+decide the output:
+
+- **no output → the frame is dropped**, so `select(...)` is a filter;
+- **one or more outputs → each is sent as its own JSON text message**, so
+  `{src: .source, type: .payload.data.decoded.header.payloadTypeName}` reshapes
+  a frame and `.payload.data.hash` projects a single column.
+
+The program is compiled once at connect time; an invalid program fails the
+handshake with `400`. A per-frame runtime error (e.g. a type error) is logged and
+that frame skipped, without dropping the client. Because jq always emits JSON,
+`jaq` ignores `binary=1`. This parameter is experimental and may change.
+
+```js
+// Just the source + type of every advert, as a tiny object stream:
+const prog = '{src: .source, type: .payload.data.decoded.header.payloadTypeName}'
+           + ' | select(.type == "ADVERT")';
+const ws = new WebSocket(`ws://localhost:8080/ws?jaq=${encodeURIComponent(prog)}`);
+```
+
 ## Performance characteristics
 
 The source-specific endpoint forwards the upstream text/binary value through a bounded broadcast channel. The multiplexed endpoint creates one envelope per incoming frame; all connected clients share that immutable `Bytes` allocation.
@@ -201,8 +261,8 @@ The source-specific endpoint forwards the upstream text/binary value through a b
 
 ## Natural next steps
 
-- subscription/filter control messages
+- subscription/filter control messages (filters are currently set once, via query
+  parameters at connect time — see [Filtering `/ws`](#filtering-ws))
 - an in-memory replay ring
 - append-only persistent segments or NATS JetStream
-- shared dedupe/filter pipelines
 - authentication and per-source authorization
