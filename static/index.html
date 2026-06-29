@@ -375,8 +375,7 @@
       <div class="eyebrow"><span id="status-dot" class="dot"></span><span id="status-text">telemetry disconnected</span></div>
       <h1>Tangleveil - The MeshCore Multiplexer</h1>
       <p class="intro">
-        Across the mesh, distant listeners keep watch. Tangleveil maintains their live connections, gathers packet streams from analyzers of many kinds, and weaves them into a single WebSocket current.
-      </p>
+        Across the mesh, public analyzer streams flow from distant listeners. Tangleveil maintains one lightweight connection to each source and weaves their live packets into a single unified WebSocket stream.      </p>
       <div class="connect-snippet">
         <code id="ws-url">wss://{{HOSTNAME}}/ws</code>
         <button id="copy-ws-url" type="button">Copy</button>
