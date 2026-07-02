@@ -32,6 +32,10 @@ admin_token = "change-me"
 # library default. Per-source headers in sources.toml can override this.
 # user_agent = "Tangleveil/0.1.0"
 
+# Ignore upstream TLS certificate validation errors for wss:// connections.
+# Set to false to require valid certificates and hostnames.
+ignore_ssl_certificate_errors = true
+
 # Extra telemetry timing logs and debug-level output when true.
 # Can also be enabled with --verbose / -v.
 verbose = false

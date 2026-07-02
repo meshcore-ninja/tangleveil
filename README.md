@@ -73,6 +73,7 @@ Tangleveil can reload `config.toml` and the sources file from disk without resta
 - adds, removes, or updates upstream sources
 - reconnects sources whose URL or headers changed
 - applies reconnect backoff settings from config
+- applies `ignore_ssl_certificate_errors` and reconnects sources when it changes
 - refreshes the admin token
 - updates the dedup window (applied to connections opened after the reload)
 

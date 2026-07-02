@@ -17,8 +17,7 @@ use tangleveil::{
     reload,
     sources::SourceSupervisor,
     state::AppState,
-    status,
-    telemetry,
+    status, telemetry,
 };
 
 #[tokio::main]
@@ -77,6 +76,9 @@ async fn main() -> Result<()> {
         supervisor: Arc::new(tokio::sync::Mutex::new(SourceSupervisor::new())),
         admin_token: Arc::new(RwLock::new(loaded.config.admin_token.clone())),
         user_agent: Arc::new(RwLock::new(loaded.config.user_agent.clone())),
+        ignore_ssl_certificate_errors: Arc::new(RwLock::new(
+            loaded.config.ignore_ssl_certificate_errors,
+        )),
         throughput: Arc::new(ThroughputMetrics::default()),
         metrics: telemetry_metrics,
         verbose,

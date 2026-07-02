@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::Ordering,
-    },
+    sync::{Arc, atomic::Ordering},
     time::Instant,
 };
 
@@ -11,7 +8,7 @@ use axum::extract::ws::Utf8Bytes;
 use futures_util::{SinkExt, StreamExt};
 use tokio::{sync::broadcast, time::sleep};
 use tokio_tungstenite::{
-    connect_async,
+    connect_async_tls_with_config,
     tungstenite::{
         Message as UpstreamMessage,
         client::IntoClientRequest,
@@ -36,6 +33,7 @@ pub async fn run_source_forever(
     throughput: Arc<ThroughputMetrics>,
     reconnect: Arc<std::sync::RwLock<ReconnectPolicy>>,
     user_agent: Arc<std::sync::RwLock<String>>,
+    ignore_ssl_certificate_errors: Arc<std::sync::RwLock<bool>>,
     cancel: CancellationToken,
 ) {
     let mut reconnect_delay = reconnect
@@ -56,7 +54,15 @@ pub async fn run_source_forever(
             continue;
         }
 
-        match connect_source(&source, &runtime, &user_agent, &cancel).await {
+        match connect_source(
+            &source,
+            &runtime,
+            &user_agent,
+            &ignore_ssl_certificate_errors,
+            &cancel,
+        )
+        .await
+        {
             Some(Ok(stream)) => {
                 reconnect_delay = reconnect
                     .read()
@@ -64,9 +70,15 @@ pub async fn run_source_forever(
                     .initial_delay;
                 info!(source = %source.id, "connected to upstream");
 
-                if let Err(error) =
-                    forward_source(&source, &runtime, &multiplex_tx, &throughput, stream, &cancel)
-                        .await
+                if let Err(error) = forward_source(
+                    &source,
+                    &runtime,
+                    &multiplex_tx,
+                    &throughput,
+                    stream,
+                    &cancel,
+                )
+                .await
                 {
                     warn!(source = %source.id, %error, "upstream disconnected");
                     runtime.record_error();
@@ -94,8 +106,8 @@ pub async fn run_source_forever(
             .read()
             .expect("reconnect policy lock poisoned")
             .clone();
-        let degraded = offline_since
-            .is_some_and(|since| since.elapsed() >= policy.offline_threshold);
+        let degraded =
+            offline_since.is_some_and(|since| since.elapsed() >= policy.offline_threshold);
 
         runtime.set_state(if degraded {
             ConnectionState::ReconnectWaitDegraded
@@ -142,8 +154,15 @@ async fn connect_source(
     source: &crate::config::SourceConfig,
     runtime: &SourceRuntime,
     user_agent: &Arc<std::sync::RwLock<String>>,
+    ignore_ssl_certificate_errors: &Arc<std::sync::RwLock<bool>>,
     cancel: &CancellationToken,
-) -> Option<Result<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>> {
+) -> Option<
+    Result<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    >,
+> {
     if cancel.is_cancelled() {
         return None;
     }
@@ -197,9 +216,14 @@ async fn connect_source(
     }
 
     runtime.set_state(ConnectionState::Handshaking);
+    let ignore_ssl_certificate_errors = ignore_ssl_certificate_errors
+        .read()
+        .map(|value| *value)
+        .unwrap_or(true);
+    let connector = ignore_ssl_certificate_errors.then(crate::tls::insecure_connector);
 
     let result = if let Some(proxy) = source.proxy.as_deref() {
-        crate::proxy::connect_via_proxy(request, proxy)
+        crate::proxy::connect_via_proxy(request, proxy, ignore_ssl_certificate_errors)
             .await
             .with_context(|| {
                 format!(
@@ -208,14 +232,9 @@ async fn connect_source(
                 )
             })
     } else {
-        connect_async(request)
+        connect_async_tls_with_config(request, None, false, connector)
             .await
-            .with_context(|| {
-                format!(
-                    "WebSocket handshake failed for source {}",
-                    source.id
-                )
-            })
+            .with_context(|| format!("WebSocket handshake failed for source {}", source.id))
     };
 
     match result {

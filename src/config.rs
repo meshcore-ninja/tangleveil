@@ -52,6 +52,8 @@ struct ConfigFile {
     admin_token: String,
     #[serde(default)]
     user_agent: String,
+    #[serde(default = "default_ignore_ssl_certificate_errors")]
+    ignore_ssl_certificate_errors: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,6 +89,7 @@ pub struct Config {
     pub admin_token: String,
     pub hostname: String,
     pub user_agent: String,
+    pub ignore_ssl_certificate_errors: bool,
 }
 
 #[derive(Debug)]
@@ -117,10 +120,7 @@ impl std::fmt::Debug for SourceConfig {
             .field("url", &self.url)
             .field("headers", &self.headers)
             .field("disabled", &self.disabled)
-            .field(
-                "proxy",
-                &self.proxy.as_ref().map(|_| "<redacted>"),
-            )
+            .field("proxy", &self.proxy.as_ref().map(|_| "<redacted>"))
             .field("mapping", &self.mapping)
             .finish()
     }
@@ -131,9 +131,10 @@ pub async fn load_config(path: &str) -> Result<LoadedConfig> {
     let data = tokio::fs::read(path)
         .await
         .with_context(|| format!("could not read configuration file {path}"))?;
-    let file: ConfigFile = toml::from_str(std::str::from_utf8(&data).with_context(|| {
-        format!("configuration file {path} is not valid UTF-8")
-    })?)
+    let file: ConfigFile = toml::from_str(
+        std::str::from_utf8(&data)
+            .with_context(|| format!("configuration file {path} is not valid UTF-8"))?,
+    )
     .with_context(|| format!("could not parse configuration file {path}"))?;
 
     let base_dir = config_path
@@ -163,6 +164,7 @@ pub async fn load_config(path: &str) -> Result<LoadedConfig> {
             admin_token: file.admin_token,
             hostname: file.hostname,
             user_agent: file.user_agent,
+            ignore_ssl_certificate_errors: file.ignore_ssl_certificate_errors,
         },
         sources_path,
         static_path,
@@ -180,7 +182,11 @@ pub async fn load_static_html(path: &Path) -> Result<String> {
 /// `{{HOSTNAME}}` falls back to the literal word "host" when unconfigured.
 /// `{{VERSION}}` is always the binary's own compiled-in crate version.
 pub fn render_static_html(html: &str, hostname: &str) -> String {
-    let hostname = if hostname.is_empty() { "host" } else { hostname };
+    let hostname = if hostname.is_empty() {
+        "host"
+    } else {
+        hostname
+    };
     html.replace("{{HOSTNAME}}", hostname)
         .replace("{{VERSION}}", env!("CARGO_PKG_VERSION"))
 }
@@ -189,9 +195,10 @@ async fn load_sources_file(path: &Path) -> Result<Vec<SourceConfig>> {
     let data = tokio::fs::read(path)
         .await
         .with_context(|| format!("could not read sources file {}", path.display()))?;
-    let file: SourcesFile = toml::from_str(std::str::from_utf8(&data).with_context(|| {
-        format!("sources file {} is not valid UTF-8", path.display())
-    })?)
+    let file: SourcesFile = toml::from_str(
+        std::str::from_utf8(&data)
+            .with_context(|| format!("sources file {} is not valid UTF-8", path.display()))?,
+    )
     .with_context(|| format!("could not parse sources file {}", path.display()))?;
 
     Ok(file.sources)
@@ -253,8 +260,7 @@ pub fn validate_config(config: &Config) -> Result<()> {
 }
 
 fn validate_proxy_url(proxy: &str) -> Result<()> {
-    let parsed = url::Url::parse(proxy)
-        .with_context(|| format!("invalid proxy URL {proxy}"))?;
+    let parsed = url::Url::parse(proxy).with_context(|| format!("invalid proxy URL {proxy}"))?;
     if parsed.scheme() != "http" {
         bail!("proxy URL must use http:// scheme");
     }
@@ -302,4 +308,8 @@ const fn default_dedup_window_secs() -> u64 {
 
 const fn default_dedup_max_window_secs() -> u64 {
     DEFAULT_DEDUP_MAX_WINDOW_SECS
+}
+
+const fn default_ignore_ssl_certificate_errors() -> bool {
+    true
 }

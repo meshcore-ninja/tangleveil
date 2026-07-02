@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, RwLock,
-        atomic::{AtomicU64, AtomicU8, Ordering},
+        atomic::{AtomicU8, AtomicU64, Ordering},
     },
 };
 
@@ -76,19 +76,34 @@ impl SourceRuntime {
     }
 
     pub fn id(&self) -> String {
-        self.config.read().expect("source config lock poisoned").id.clone()
+        self.config
+            .read()
+            .expect("source config lock poisoned")
+            .id
+            .clone()
     }
 
     pub fn url(&self) -> String {
-        self.config.read().expect("source config lock poisoned").url.clone()
+        self.config
+            .read()
+            .expect("source config lock poisoned")
+            .url
+            .clone()
     }
 
     pub fn mapping(&self) -> Option<String> {
-        self.config.read().expect("source config lock poisoned").mapping.clone()
+        self.config
+            .read()
+            .expect("source config lock poisoned")
+            .mapping
+            .clone()
     }
 
     pub fn config_snapshot(&self) -> SourceConfig {
-        self.config.read().expect("source config lock poisoned").clone()
+        self.config
+            .read()
+            .expect("source config lock poisoned")
+            .clone()
     }
 
     pub fn update_config(&self, source: SourceConfig) {
@@ -117,7 +132,9 @@ impl SourceRuntime {
 
         let now_ms = unix_time_ms();
         self.last_packet_ms.store(now_ms, Ordering::Release);
-        self.metrics.last_packet_timestamp.set(now_ms as f64 / 1000.0);
+        self.metrics
+            .last_packet_timestamp
+            .set(now_ms as f64 / 1000.0);
     }
 
     pub fn total_packets(&self) -> u64 {
@@ -181,6 +198,7 @@ pub struct AppState {
     pub supervisor: Arc<Mutex<SourceSupervisor>>,
     pub admin_token: Arc<RwLock<String>>,
     pub user_agent: Arc<RwLock<String>>,
+    pub ignore_ssl_certificate_errors: Arc<RwLock<bool>>,
     pub throughput: Arc<ThroughputMetrics>,
     pub metrics: TelemetryMetrics,
     pub verbose: bool,

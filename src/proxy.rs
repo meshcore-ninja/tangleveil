@@ -4,12 +4,8 @@ use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream,
-    client_async_tls_with_config, client_async_with_config,
-    tungstenite::{
-        client::IntoClientRequest,
-        handshake::client::Response,
-    },
+    MaybeTlsStream, WebSocketStream, client_async_tls_with_config, client_async_with_config,
+    tungstenite::{client::IntoClientRequest, handshake::client::Response},
 };
 use url::Url;
 
@@ -83,6 +79,7 @@ impl ProxyTarget {
 pub async fn connect_via_proxy<R>(
     request: R,
     proxy_url: &str,
+    ignore_ssl_certificate_errors: bool,
 ) -> Result<(WebSocketStream<MaybeTlsStream<TcpStream>>, Response)>
 where
     R: IntoClientRequest + Unpin,
@@ -97,7 +94,8 @@ where
     send_connect(&mut stream, &target, &proxy).await?;
 
     if target.is_tls {
-        client_async_tls_with_config(request, stream, None, None)
+        let connector = ignore_ssl_certificate_errors.then(crate::tls::insecure_connector);
+        client_async_tls_with_config(request, stream, None, connector)
             .await
             .map_err(|error| error.into())
     } else {
@@ -154,7 +152,8 @@ async fn read_connect_response(stream: &mut TcpStream) -> Result<()> {
         }
     }
 
-    let response = std::str::from_utf8(&buf).context("proxy CONNECT response is not valid UTF-8")?;
+    let response =
+        std::str::from_utf8(&buf).context("proxy CONNECT response is not valid UTF-8")?;
     let status_line = response
         .lines()
         .next()

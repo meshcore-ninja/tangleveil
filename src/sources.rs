@@ -45,20 +45,29 @@ impl SourceSupervisor {
         }
 
         {
-            let mut user_agent = state
-                .user_agent
-                .write()
-                .expect("user agent lock poisoned");
+            let mut user_agent = state.user_agent.write().expect("user agent lock poisoned");
             *user_agent = config.user_agent.clone();
         }
+
+        let ignore_ssl_certificate_errors_changed = {
+            let mut ignore_ssl_certificate_errors = state
+                .ignore_ssl_certificate_errors
+                .write()
+                .expect("ignore SSL certificate errors lock poisoned");
+            let changed = *ignore_ssl_certificate_errors != config.ignore_ssl_certificate_errors;
+            *ignore_ssl_certificate_errors = config.ignore_ssl_certificate_errors;
+            changed
+        };
 
         let current_capacity = *state
             .channel_capacity
             .read()
             .expect("channel capacity lock poisoned");
         if config.channel_capacity != current_capacity {
-            *state.channel_capacity.write().expect("channel capacity lock poisoned") =
-                config.channel_capacity;
+            *state
+                .channel_capacity
+                .write()
+                .expect("channel capacity lock poisoned") = config.channel_capacity;
             info!(
                 channel_capacity = config.channel_capacity,
                 "channel_capacity updated for newly added sources"
@@ -105,7 +114,10 @@ impl SourceSupervisor {
                     continue;
                 }
 
-                if !previous.disabled && source_needs_reconnect(&previous, &source) {
+                if !previous.disabled
+                    && (source_needs_reconnect(&previous, &source)
+                        || ignore_ssl_certificate_errors_changed)
+                {
                     self.restart_task(state, &id, runtime);
                     info!(source = %id, "restarted analyzer after config reload");
                 } else if previous.disabled || !self.tasks.contains_key(&id) {
@@ -164,7 +176,8 @@ impl SourceSupervisor {
         self.stop_task(id);
         let cancel = CancellationToken::new();
         let handle = spawn_upstream_task(state, runtime, cancel.clone());
-        self.tasks.insert(id.to_owned(), ManagedTask { cancel, handle });
+        self.tasks
+            .insert(id.to_owned(), ManagedTask { cancel, handle });
     }
 }
 
@@ -177,6 +190,7 @@ fn spawn_upstream_task(
     let throughput = Arc::clone(&state.throughput);
     let reconnect = Arc::clone(&state.reconnect);
     let user_agent = Arc::clone(&state.user_agent);
+    let ignore_ssl_certificate_errors = Arc::clone(&state.ignore_ssl_certificate_errors);
 
     tokio::spawn(async move {
         upstream::run_source_forever(
@@ -185,6 +199,7 @@ fn spawn_upstream_task(
             throughput,
             reconnect,
             user_agent,
+            ignore_ssl_certificate_errors,
             cancel,
         )
         .await;
@@ -192,13 +207,15 @@ fn spawn_upstream_task(
 }
 
 fn source_needs_reconnect(previous: &SourceConfig, next: &SourceConfig) -> bool {
-    previous.url != next.url
-        || previous.headers != next.headers
-        || previous.proxy != next.proxy
+    previous.url != next.url || previous.headers != next.headers || previous.proxy != next.proxy
 }
 
 pub async fn reload_from_disk(state: &AppState, supervisor: &mut SourceSupervisor) -> Result<()> {
-    let config_path = state.config_path.read().expect("config path lock poisoned").clone();
+    let config_path = state
+        .config_path
+        .read()
+        .expect("config path lock poisoned")
+        .clone();
     let loaded = crate::config::load_config(&config_path).await?;
 
     {
@@ -220,7 +237,10 @@ pub async fn reload_from_disk(state: &AppState, supervisor: &mut SourceSuperviso
     match crate::config::load_static_html(&loaded.static_path).await {
         Ok(html) => {
             let html = crate::config::render_static_html(&html, &loaded.config.hostname);
-            *state.static_html.write().expect("static html lock poisoned") = Arc::from(html);
+            *state
+                .static_html
+                .write()
+                .expect("static html lock poisoned") = Arc::from(html);
         }
         Err(error) => {
             warn!(%error, "could not reload static html; keeping previous version");
@@ -235,7 +255,10 @@ pub async fn reload_from_disk(state: &AppState, supervisor: &mut SourceSuperviso
     }
 
     {
-        let mut admin_token = state.admin_token.write().expect("admin token lock poisoned");
+        let mut admin_token = state
+            .admin_token
+            .write()
+            .expect("admin token lock poisoned");
         *admin_token = loaded.config.admin_token.clone();
     }
 
